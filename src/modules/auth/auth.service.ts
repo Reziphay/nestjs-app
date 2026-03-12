@@ -46,7 +46,7 @@ export class AuthService {
     private readonly prismaService: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   async requestOtp(
     dto: RequestOtpDto,
@@ -62,7 +62,7 @@ export class AuthService {
     const now = new Date();
     const requestWindowStart = new Date(
       now.getTime() -
-        this.getNumberConfig('auth.otpRequestWindowMinutes') * 60 * 1000,
+      this.getNumberConfig('auth.otpRequestWindowMinutes') * 60 * 1000,
     );
 
     const recentRequestCount = await this.prismaService.authOtp.count({
@@ -120,7 +120,7 @@ export class AuthService {
     );
     const resendAvailableAt = new Date(
       now.getTime() +
-        this.getNumberConfig('auth.otpResendCooldownSeconds') * 1000,
+      this.getNumberConfig('auth.otpResendCooldownSeconds') * 1000,
     );
 
     const otpRequest = await this.prismaService.authOtp.create({
@@ -396,7 +396,7 @@ export class AuthService {
     const rawToken = `emv_${randomBytes(24).toString('hex')}`;
     const expiresAt = new Date(
       now.getTime() +
-        this.getNumberConfig('auth.emailVerifyTtlMinutes') * 60 * 1000,
+      this.getNumberConfig('auth.emailVerifyTtlMinutes') * 60 * 1000,
     );
 
     await this.prismaService.user.update({
@@ -544,7 +544,7 @@ export class AuthService {
     const nextRefreshToken = this.generateRefreshToken();
     const nextRefreshTokenExpiresAt = new Date(
       now.getTime() +
-        this.getNumberConfig('auth.refreshTokenTtlDays') * 24 * 60 * 60 * 1000,
+      this.getNumberConfig('auth.refreshTokenTtlDays') * 24 * 60 * 60 * 1000,
     );
 
     await this.prismaService.session.update({
@@ -648,7 +648,7 @@ export class AuthService {
     const now = new Date();
     const refreshTokenExpiresAt = new Date(
       now.getTime() +
-        this.getNumberConfig('auth.refreshTokenTtlDays') * 24 * 60 * 60 * 1000,
+      this.getNumberConfig('auth.refreshTokenTtlDays') * 24 * 60 * 60 * 1000,
     );
 
     const session = await this.prismaService.session.create({
@@ -708,11 +708,6 @@ export class AuthService {
   }
 
   private toUserProfileDto(user: AuthUser): UserProfileDto {
-    const updatedAt =
-      user.profile && user.profile.updatedAt > user.updatedAt
-        ? user.profile.updatedAt
-        : user.updatedAt;
-
     return {
       id: user.id,
       fullName:
@@ -734,7 +729,7 @@ export class AuthService {
         phoneNumber: user.phoneNumber,
       },
       createdAt: user.createdAt.toISOString(),
-      updatedAt: updatedAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
     };
   }
 
