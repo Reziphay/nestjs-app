@@ -41,9 +41,26 @@ pnpm prisma:validate
 pnpm prisma:generate
 pnpm prisma:migrate:dev
 pnpm prisma:migrate:deploy
+pnpm prisma:seed
 pnpm test
 pnpm test:e2e
 ```
+
+## Seed Data
+
+Run the demo seed after migrations:
+
+```bash
+pnpm prisma:seed
+```
+
+Seeded access details:
+
+- Admin email: `admin@seed.reziphay.local`
+- Admin password: `Admin12345!` by default, or `SEED_ADMIN_PASSWORD` if overridden
+- Customer phone: `+15550000001`
+- Provider phone: `+15550000002`
+- Hybrid user phone: `+15550000003`
 
 ## Current Scope
 
@@ -54,4 +71,4 @@ pnpm test:e2e
 - Local MySQL + Redis setup with Docker
 - Health endpoint
 - Prisma schema and initial domain migration setup
-# nestjs-app
+- Repeatable demo seed data for local development
