@@ -1,0 +1,63 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: reziphay-api
+    command: pnpm start:dev
+    env_file:
+      - .env
+    ports:
+      - '${PORT:-3000}:3000'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  mysql:
+    image: mysql:8.4
+    container_name: reziphay-mysql
+    restart: unless-stopped
+    ports:
+      - '${MYSQL_PORT:-3306}:3306'
+    environment:
+      MYSQL_ROOT_PASSWORD: '${MYSQL_ROOT_PASSWORD:-root}'
+      MYSQL_DATABASE: '${MYSQL_DATABASE:-reziphay}'
+      MYSQL_USER: '${MYSQL_USER:-reziphay}'
+      MYSQL_PASSWORD: '${MYSQL_PASSWORD:-reziphay}'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'mysqladmin ping -h localhost -u${MYSQL_USER:-reziphay} -p${MYSQL_PASSWORD:-reziphay}',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: reziphay-redis
+    restart: unless-stopped
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - redis-data:/data
+
+volumes:
+  mysql-data:
+  redis-data:

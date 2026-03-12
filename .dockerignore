@@ -1,0 +1,8 @@
+dist
+coverage
+node_modules
+.env
+.env.local
+README.md
+todo_backend_reziphay.md
+api_contract_mobile_reziphay.md
