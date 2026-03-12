@@ -285,6 +285,7 @@ model AuthOtp {
   userId             String?
   phoneNumber        String         @db.VarChar(32)
   purpose            AuthOtpPurpose
+  roleHint           UserRole?
   codeHash           String         @db.VarChar(191)
   expiresAt          DateTime
   consumedAt         DateTime?
@@ -319,9 +320,11 @@ model Session {
   userId            String
   refreshTokenHash  String        @unique @db.VarChar(191)
   status            SessionStatus @default(ACTIVE)
+  devicePlatform    String?       @db.VarChar(32)
   userAgent         String?       @db.VarChar(255)
   ipAddress         String?       @db.VarChar(64)
   deviceName        String?       @db.VarChar(120)
+  appVersion        String?       @db.VarChar(64)
   lastUsedAt        DateTime?
   expiresAt         DateTime
   revokedAt         DateTime?
