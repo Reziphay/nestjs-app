@@ -27,6 +27,13 @@ const envSchema = Joi.object({
   JWT_REFRESH_SECRET: Joi.string().min(16).default('dev-refresh-secret'),
   JWT_ACCESS_TTL_MINUTES: Joi.number().positive().default(15),
   JWT_REFRESH_TTL_DAYS: Joi.number().positive().default(30),
+  OTP_TTL_MINUTES: Joi.number().positive().default(5),
+  OTP_RESEND_COOLDOWN_SECONDS: Joi.number().positive().default(60),
+  OTP_MAX_ATTEMPTS: Joi.number().positive().default(5),
+  OTP_REQUEST_WINDOW_MINUTES: Joi.number().positive().default(15),
+  OTP_MAX_REQUESTS_PER_WINDOW: Joi.number().positive().default(5),
+  EMAIL_VERIFY_TTL_MINUTES: Joi.number().positive().default(60),
+  EMAIL_VERIFY_COOLDOWN_SECONDS: Joi.number().positive().default(60),
 });
 
 export function validateEnv(

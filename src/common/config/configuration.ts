@@ -28,5 +28,20 @@ export default () => ({
     refreshTokenSecret: process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret',
     accessTokenTtlMinutes: Number(process.env.JWT_ACCESS_TTL_MINUTES ?? 15),
     refreshTokenTtlDays: Number(process.env.JWT_REFRESH_TTL_DAYS ?? 30),
+    otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES ?? 5),
+    otpResendCooldownSeconds: Number(
+      process.env.OTP_RESEND_COOLDOWN_SECONDS ?? 60,
+    ),
+    otpMaxAttempts: Number(process.env.OTP_MAX_ATTEMPTS ?? 5),
+    otpRequestWindowMinutes: Number(
+      process.env.OTP_REQUEST_WINDOW_MINUTES ?? 15,
+    ),
+    otpMaxRequestsPerWindow: Number(
+      process.env.OTP_MAX_REQUESTS_PER_WINDOW ?? 5,
+    ),
+    emailVerifyTtlMinutes: Number(process.env.EMAIL_VERIFY_TTL_MINUTES ?? 60),
+    emailVerifyCooldownSeconds: Number(
+      process.env.EMAIL_VERIFY_COOLDOWN_SECONDS ?? 60,
+    ),
   },
 });
