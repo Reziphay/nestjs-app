@@ -1,17 +1,10 @@
-import 'reflect-metadata';
-
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import {
-  DocumentBuilder,
-  SwaggerCustomOptions,
-  SwaggerModule,
-} from '@nestjs/swagger';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 
-import { AppModule } from 'src/app.module';
-import { HttpExceptionFilter } from 'src/common/filters/http-exception.filter';
-import { ApiResponseInterceptor } from 'src/common/interceptors/api-response.interceptor';
+import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
@@ -19,44 +12,51 @@ async function bootstrap(): Promise<void> {
   });
 
   const configService = app.get(ConfigService);
-  const appName = configService.get<string>('app.name', { infer: true });
-  const port = Number(configService.get('app.port', { infer: true }) ?? 3000);
-  const apiPrefix =
-    configService.get<string>('app.apiPrefix', { infer: true }) ?? 'api/v1';
-  const swaggerPath =
-    configService.get<string>('app.swaggerPath', { infer: true }) ?? 'api/docs';
+  const apiPrefix = configService.getOrThrow<string>('app.apiPrefix');
+  const swaggerEnabled =
+    configService.getOrThrow<boolean>('app.swaggerEnabled');
+  const corsOrigins = configService.getOrThrow<string[]>('app.corsOrigins');
+  const port = configService.getOrThrow<number>('app.port');
 
-  app.enableCors();
+  app.use(helmet());
+  app.enableCors({
+    origin: corsOrigins.length > 0 ? corsOrigins : true,
+    credentials: true,
+  });
   app.setGlobalPrefix(apiPrefix);
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      transform: true,
       forbidNonWhitelisted: true,
+      transform: true,
       transformOptions: {
         enableImplicitConversion: true,
       },
     }),
   );
-  app.useGlobalInterceptors(new ApiResponseInterceptor());
-  app.useGlobalFilters(new HttpExceptionFilter());
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle(appName ?? 'Reziphay API')
-    .setDescription('Reziphay mobile and admin backend API')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
-  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
-  const swaggerOptions: SwaggerCustomOptions = {
-    swaggerOptions: {
-      persistAuthorization: true,
-    },
-  };
-  SwaggerModule.setup(swaggerPath, app, swaggerDocument, swaggerOptions);
+  if (swaggerEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Reziphay Backend API')
+      .setDescription('Reservation platform backend for Reziphay MVP')
+      .setVersion('1.0.0')
+      .addBearerAuth()
+      .build();
 
-  app.enableShutdownHooks();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
+
   await app.listen(port);
+  Logger.log(`Reziphay backend listening on port ${port}`, 'Bootstrap');
 }
 
-void bootstrap();
+bootstrap().catch((error: unknown) => {
+  const logger = new Logger('Bootstrap');
+
+  logger.error(
+    'Application failed to start.',
+    error instanceof Error ? error.stack : undefined,
+  );
+  process.exitCode = 1;
+});

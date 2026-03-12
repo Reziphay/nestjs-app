@@ -1,74 +1,95 @@
 # Reziphay Backend
 
-Initial MVP backend setup built with NestJS.
+Phase 1 foundation for the Reziphay backend MVP. This app is a NestJS modular monolith with PostgreSQL via Prisma, Redis connectivity, Swagger, and the first backend-critical surfaces:
 
-## Requirements
+- config and env validation
+- Prisma schema and seed data
+- phone OTP auth flow
+- email verification magic links
+- JWT access/refresh sessions with role-aware switching
+- user profile and role activation endpoints
+- health checks for PostgreSQL and Redis
 
-- Node.js 22+
-- pnpm 10+
-- Docker + Docker Compose
+## Stack
 
-## Setup
+- NestJS
+- TypeScript
+- PostgreSQL
+- Prisma
+- Redis
+- pnpm
+
+## Local setup
+
+1. Install dependencies:
+
+```bash
+pnpm install
+```
+
+2. Copy the env template:
 
 ```bash
 cp .env.example .env
-pnpm install
-docker compose up -d mysql redis
-pnpm prisma:migrate:dev
-pnpm start:dev
 ```
 
-If host ports `3306` or `6379` are already in use, run Docker Compose with port overrides:
+3. Start PostgreSQL and Redis:
 
 ```bash
-MYSQL_PORT=3307 REDIS_PORT=6380 docker compose up -d mysql redis
+docker compose up -d
 ```
 
-During first initialization, the MySQL container grants the default `reziphay` user the `CREATE`, `DROP`, and `ALTER` privileges required by Prisma migrations. If you change the database username, update the init SQL file accordingly.
-
-API:
-
-- `http://localhost:3000/api/v1/health`
-- `http://localhost:3000/api/docs`
-
-## Scripts
+4. Generate the Prisma client and run the initial migration:
 
 ```bash
-pnpm start:dev
+pnpm prisma:generate
+pnpm prisma:migrate --name init_phase1
+```
+
+5. Seed local data:
+
+```bash
+pnpm prisma:seed
+```
+
+6. Start the API:
+
+```bash
+pnpm dev
+```
+
+## Useful commands
+
+```bash
 pnpm build
 pnpm lint
-pnpm prisma:validate
-pnpm prisma:generate
-pnpm prisma:migrate:dev
-pnpm prisma:migrate:deploy
-pnpm prisma:seed
 pnpm test
 pnpm test:e2e
 ```
 
-## Seed Data
+## API surface in Phase 1
 
-Run the demo seed after migrations:
+- `POST /api/v1/auth/request-phone-otp`
+- `POST /api/v1/auth/verify-phone-otp`
+- `POST /api/v1/auth/request-email-magic-link`
+- `POST /api/v1/auth/verify-email-magic-link`
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
+- `GET /api/v1/users/me`
+- `POST /api/v1/users/me/activate-uso`
+- `GET /api/v1/users/me/roles`
+- `POST /api/v1/users/me/switch-role`
+- `GET /api/v1/health`
 
-```bash
-pnpm prisma:seed
-```
+Swagger is exposed at [http://localhost:3000/api/docs](http://localhost:3000/api/docs) when `SWAGGER_ENABLED=true`.
 
-Seeded access details:
+## Seeded accounts
 
-- Admin email: `admin@seed.reziphay.local`
-- Admin password: `Admin12345!` by default, or `SEED_ADMIN_PASSWORD` if overridden
-- Customer phone: `+15550000001`
-- Provider phone: `+15550000002`
-- Hybrid user phone: `+15550000003`
+These records are meant for local development only:
 
-## Current Scope
+- `admin@reziphay.local` / `+10000000001`
+- `customer@reziphay.local` / `+10000000002`
+- `uso@reziphay.local` / `+10000000003`
 
-- Global env/config loading
-- Global validation pipe
-- Standard API success/error envelope
-- Swagger bootstrap
-- Local MySQL + Redis setup with Docker
-- Health endpoint
-- Prisma schema and initial domain migration setup
-- Repeatable demo seed data for local development
+Phone OTP delivery is intentionally stubbed in Phase 1. In non-production environments, the requested OTP or email verification token is returned in the API response so local testing stays fast.

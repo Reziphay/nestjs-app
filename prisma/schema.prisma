@@ -3,826 +3,119 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-  CUSTOMER
-  SERVICE_OWNER
-}
-
-enum AccountStatus {
+enum UserStatus {
   ACTIVE
   SUSPENDED
   CLOSED
 }
 
-enum AuthOtpPurpose {
+enum AppRole {
+  UCR
+  USO
+  ADMIN
+}
+
+enum OtpPurpose {
+  REGISTER
   LOGIN
-  PHONE_VERIFY
+  VERIFY_PHONE
+  CHANGE_PHONE
 }
 
-enum EmailVerificationPurpose {
+enum MagicLinkPurpose {
   VERIFY_EMAIL
-  MAGIC_LINK
-}
-
-enum SessionStatus {
-  ACTIVE
-  REVOKED
-  EXPIRED
-}
-
-enum BrandMembershipRole {
-  OWNER
-  MANAGER
-  MEMBER
-}
-
-enum JoinRequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  CANCELLED
-}
-
-enum ServiceMode {
-  SOLO
-  MULTI
-}
-
-enum ScheduleOverrideType {
-  CLOSED
-  AVAILABLE
-}
-
-enum ReservationStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  CANCELLED_BY_CUSTOMER
-  CANCELLED_BY_PROVIDER
-  CHANGE_REQUESTED_BY_CUSTOMER
-  CHANGE_REQUESTED_BY_PROVIDER
-  COMPLETED
-  NO_SHOW
-  EXPIRED
-}
-
-enum ReservationActorType {
-  SYSTEM
-  CUSTOMER
-  PROVIDER
-  ADMIN
-}
-
-enum ReservationPartyType {
-  CUSTOMER
-  PROVIDER
-}
-
-enum ReservationChangeRequestStatus {
-  PENDING
-  ACCEPTED
-  REJECTED
-  CANCELLED
-}
-
-enum ReviewTargetType {
-  SERVICE
-  PROVIDER
-  BRAND
-}
-
-enum ReviewReportStatus {
-  OPEN
-  REVIEWING
-  RESOLVED
-  DISMISSED
-}
-
-enum PenaltyReason {
-  NO_SHOW
-}
-
-enum PenaltyDisputeStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum NotificationType {
-  RESERVATION_RECEIVED
-  RESERVATION_CONFIRMED
-  RESERVATION_REJECTED
-  RESERVATION_CANCELLED
-  RESERVATION_CHANGE_REQUESTED
-  UPCOMING_APPOINTMENT
-  DELAY_STATUS
-  REVIEW_RECEIVED
-  SYSTEM
-}
-
-enum NotificationScreen {
-  RESERVATION_DETAIL
-  NOTIFICATIONS
-  SERVICE_DETAIL
-  PROVIDER_RESERVATION_DETAIL
-  PENALTY_DETAIL
-  BRAND_DETAIL
-  PROVIDER_DETAIL
-  REVIEW_DETAIL
-  HOME
-}
-
-enum PushPlatform {
-  IOS
-  ANDROID
-}
-
-enum VisibilityLabel {
-  COMMON
-  VIP
-  BEST_OF_MONTH
-  SPONSORED
-  FEATURED
-}
-
-enum VisibilityTargetType {
-  BRAND
-  SERVICE
-  PROVIDER
-}
-
-enum VisibilitySourceType {
-  ADMIN
-  SPONSORED
-}
-
-enum SponsoredPlacementStatus {
-  ACTIVE
-  PAUSED
-  EXPIRED
-}
-
-enum AbuseTargetType {
-  USER
-  BRAND
-  SERVICE
-  REVIEW
-}
-
-enum AbuseReportStatus {
-  OPEN
-  REVIEWING
-  RESOLVED
-  DISMISSED
-}
-
-enum AdminRole {
-  SUPER_ADMIN
-  MODERATOR
-  SUPPORT
-}
-
-enum AuditActorType {
-  SYSTEM
-  USER
-  ADMIN
-}
-
-enum CompletionMethod {
-  MANUAL
-  QR
+  LOGIN_EMAIL
 }
 
 model User {
-  id                          String                     @id @default(cuid())
-  phoneNumber                 String                     @unique @db.VarChar(32)
-  email                       String?                    @unique @db.VarChar(191)
-  phoneVerifiedAt             DateTime?
-  emailVerifiedAt             DateTime?
-  activeRole                  UserRole                   @default(CUSTOMER)
-  accountStatus               AccountStatus              @default(ACTIVE)
-  suspensionEndsAt            DateTime?
-  closedAt                    DateTime?
-  closedReason                String?                    @db.VarChar(255)
-  reservationBlockedAt        DateTime?
-  reservationBlockReason      String?                    @db.VarChar(255)
-  providerQrToken             String?                    @unique @db.VarChar(191)
-  lastLoginAt                 DateTime?
-  createdAt                   DateTime                   @default(now())
-  updatedAt                   DateTime                   @updatedAt
-  deletedAt                   DateTime?
-  profile                     UserProfile?
-  settings                    UserSetting?
-  roles                       RoleAssignment[]
-  authOtps                    AuthOtp[]
-  emailVerificationTokens     EmailVerificationToken[]
-  sessions                    Session[]
-  ownedBrands                 Brand[]                    @relation("BrandOwner")
-  brandMemberships            BrandMember[]
-  brandJoinRequests           BrandJoinRequest[]         @relation("BrandJoinRequester")
-  reviewedBrandJoinRequests   BrandJoinRequest[]         @relation("BrandJoinReviewer")
-  services                    Service[]                  @relation("ServiceProvider")
-  customerReservations        Reservation[]              @relation("ReservationCustomer")
-  providerReservations        Reservation[]              @relation("ReservationProvider")
-  reservationStatusActions    ReservationStatusHistory[] @relation("ReservationHistoryActorUser")
-  reservationChangeRequests   ReservationChangeRequest[] @relation("ReservationChangeRequester")
-  reviewedChangeRequests      ReservationChangeRequest[] @relation("ReservationChangeReviewer")
-  reviewsAuthored             Review[]                   @relation("ReviewAuthor")
-  reviewRepliesAuthored       ReviewReply[]              @relation("ReviewReplyAuthor")
-  reviewReportsFiled          ReviewReport[]             @relation("ReviewReportReporter")
-  penaltyPoints               PenaltyPoint[]
-  penaltyDisputes             PenaltyDispute[]           @relation("PenaltyDisputeAuthor")
-  notifications               Notification[]
-  pushDevices                 PushDevice[]
-  abuseReportsFiled           AbuseReport[]              @relation("AbuseReportReporter")
-  auditLogs                   AuditLog[]                 @relation("AuditUserActor")
+  id              String    @id @default(uuid()) @db.Uuid
+  fullName        String    @map("full_name")
+  email           String?   @unique
+  phone           String    @unique
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  phoneVerifiedAt DateTime? @map("phone_verified_at")
+  status          UserStatus @default(ACTIVE)
+  suspendedUntil  DateTime? @map("suspended_until")
+  closedReason    String?   @map("closed_reason")
+  lastLoginAt     DateTime? @map("last_login_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  @@index([accountStatus, activeRole])
-  @@index([deletedAt])
+  roles           UserRole[]
+  authSessions    AuthSession[]
+  emailMagicLinks EmailMagicLink[]
+
+  @@index([status], map: "users_status_idx")
+  @@map("users")
 }
 
-model UserProfile {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  fullName  String   @db.VarChar(120)
-  avatarUrl String?  @db.VarChar(2048)
-  bio       String?  @db.Text
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  deletedAt DateTime?
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model UserRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid @map("user_id")
+  role      AppRole
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role], map: "user_roles_user_id_role_key")
+  @@index([role], map: "user_roles_role_idx")
+  @@map("user_roles")
 }
 
-model UserSetting {
-  id                       String   @id @default(cuid())
-  userId                   String   @unique
-  pushEnabled              Boolean  @default(true)
-  upcomingReminderEnabled  Boolean  @default(true)
-  upcomingReminderMinutes  Int      @default(60)
-  marketingPushEnabled     Boolean  @default(false)
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
-  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model AuthSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid @map("user_id")
+  refreshTokenHash String    @map("refresh_token_hash")
+  deviceInfo       String?   @map("device_info")
+  ip               String?
+  activeRole       AppRole   @default(UCR) @map("active_role")
+  lastUsedAt       DateTime? @map("last_used_at")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt], map: "auth_sessions_user_revoked_idx")
+  @@index([expiresAt], map: "auth_sessions_expires_at_idx")
+  @@map("auth_sessions")
 }
 
-model RoleAssignment {
-  id        String   @id @default(cuid())
-  userId    String
-  role      UserRole
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model OtpCode {
+  id           String     @id @default(uuid()) @db.Uuid
+  phone        String
+  codeHash     String     @map("code_hash")
+  purpose      OtpPurpose
+  fullName     String?    @map("full_name")
+  email        String?
+  expiresAt    DateTime   @map("expires_at")
+  consumedAt   DateTime?  @map("consumed_at")
+  attemptCount Int        @default(0) @map("attempt_count")
+  createdAt    DateTime   @default(now()) @map("created_at")
 
-  @@unique([userId, role])
-  @@index([role])
+  @@index([phone, purpose, consumedAt], map: "otp_codes_phone_purpose_consumed_idx")
+  @@index([phone, purpose, expiresAt], map: "otp_codes_phone_purpose_expires_idx")
+  @@map("otp_codes")
 }
 
-model AuthOtp {
-  id                 String         @id @default(cuid())
-  userId             String?
-  phoneNumber        String         @db.VarChar(32)
-  purpose            AuthOtpPurpose
-  roleHint           UserRole?
-  codeHash           String         @db.VarChar(191)
-  expiresAt          DateTime
-  consumedAt         DateTime?
-  resendAvailableAt  DateTime?
-  attemptCount       Int            @default(0)
-  requestIp          String?        @db.VarChar(64)
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  user               User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+model EmailMagicLink {
+  id         String           @id @default(uuid()) @db.Uuid
+  userId     String?          @db.Uuid @map("user_id")
+  email      String
+  tokenHash  String           @map("token_hash")
+  purpose    MagicLinkPurpose
+  expiresAt  DateTime         @map("expires_at")
+  consumedAt DateTime?        @map("consumed_at")
+  createdAt  DateTime         @default(now()) @map("created_at")
 
-  @@index([phoneNumber, purpose, expiresAt])
-  @@index([userId])
-}
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-model EmailVerificationToken {
-  id         String                   @id @default(cuid())
-  userId     String
-  email      String                   @db.VarChar(191)
-  purpose    EmailVerificationPurpose
-  tokenHash  String                   @unique @db.VarChar(191)
-  expiresAt  DateTime
-  usedAt     DateTime?
-  createdAt  DateTime                 @default(now())
-  updatedAt  DateTime                 @updatedAt
-  user       User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, purpose, expiresAt])
-}
-
-model Session {
-  id                String        @id @default(cuid())
-  userId            String
-  refreshTokenHash  String        @unique @db.VarChar(191)
-  status            SessionStatus @default(ACTIVE)
-  devicePlatform    String?       @db.VarChar(32)
-  userAgent         String?       @db.VarChar(255)
-  ipAddress         String?       @db.VarChar(64)
-  deviceName        String?       @db.VarChar(120)
-  appVersion        String?       @db.VarChar(64)
-  lastUsedAt        DateTime?
-  expiresAt         DateTime
-  revokedAt         DateTime?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, status])
-  @@index([expiresAt])
-}
-
-model Brand {
-  id                    String             @id @default(cuid())
-  ownerId               String
-  name                  String             @db.VarChar(120)
-  slug                  String             @unique @db.VarChar(191)
-  logoUrl               String?            @db.VarChar(2048)
-  address               String?            @db.VarChar(255)
-  description           String?            @db.Text
-  latitude              Decimal?           @db.Decimal(10, 7)
-  longitude             Decimal?           @db.Decimal(10, 7)
-  isVisible             Boolean            @default(true)
-  acceptingReservations Boolean            @default(true)
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
-  deletedAt             DateTime?
-  owner                 User               @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: Restrict)
-  members               BrandMember[]
-  joinRequests          BrandJoinRequest[]
-  services              Service[]
-  reservations          Reservation[]
-
-  @@index([ownerId])
-  @@index([deletedAt])
-  @@index([name])
-}
-
-model BrandMember {
-  id             String               @id @default(cuid())
-  brandId        String
-  userId         String
-  membershipRole BrandMembershipRole  @default(MEMBER)
-  isActive       Boolean              @default(true)
-  joinedAt       DateTime             @default(now())
-  removedAt      DateTime?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  brand          Brand                @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  user           User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
-
-  @@unique([brandId, userId])
-  @@index([userId, isActive])
-}
-
-model BrandJoinRequest {
-  id               String            @id @default(cuid())
-  brandId          String
-  requesterId      String
-  status           JoinRequestStatus @default(PENDING)
-  message          String?           @db.VarChar(500)
-  reviewedByUserId String?
-  reviewedAt       DateTime?
-  reviewNote       String?           @db.VarChar(500)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  brand            Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  requester        User              @relation("BrandJoinRequester", fields: [requesterId], references: [id], onDelete: Restrict)
-  reviewedByUser   User?             @relation("BrandJoinReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-
-  @@index([brandId, status])
-  @@index([requesterId, status])
-}
-
-model ServiceCategory {
-  id          String    @id @default(cuid())
-  name        String    @db.VarChar(120)
-  slug        String    @unique @db.VarChar(191)
-  description String?   @db.Text
-  isActive    Boolean   @default(true)
-  sortOrder   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  services    Service[]
-
-  @@index([isActive, sortOrder])
-}
-
-model Service {
-  id                              String                    @id @default(cuid())
-  providerId                      String
-  brandId                         String?
-  categoryId                      String?
-  name                            String                    @db.VarChar(120)
-  description                     String?                   @db.Text
-  address                         String?                   @db.VarChar(255)
-  latitude                        Decimal?                  @db.Decimal(10, 7)
-  longitude                       Decimal?                  @db.Decimal(10, 7)
-  price                           Decimal?                  @db.Decimal(10, 2)
-  currency                        String?                   @db.VarChar(3)
-  mode                            ServiceMode
-  timezone                        String                    @default("UTC") @db.VarChar(64)
-  waitingTimeMinutes              Int
-  minLeadTimeMinutes              Int?
-  maxLeadTimeDays                 Int?
-  freeCancellationDeadlineMinutes Int?
-  requiresManualApproval          Boolean                   @default(true)
-  isVisible                       Boolean                   @default(true)
-  acceptingReservations           Boolean                   @default(true)
-  createdAt                       DateTime                  @default(now())
-  updatedAt                       DateTime                  @updatedAt
-  deletedAt                       DateTime?
-  provider                        User                      @relation("ServiceProvider", fields: [providerId], references: [id], onDelete: Restrict)
-  brand                           Brand?                    @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  category                        ServiceCategory?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  photos                          ServicePhoto[]
-  availabilityRules               ServiceAvailabilityRule[]
-  scheduleOverrides               ServiceScheduleOverride[]
-  reservations                    Reservation[]
-
-  @@index([providerId, deletedAt])
-  @@index([brandId])
-  @@index([categoryId])
-  @@index([isVisible, acceptingReservations])
-}
-
-model ServicePhoto {
-  id        String   @id @default(cuid())
-  serviceId  String
-  url       String   @db.VarChar(2048)
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  deletedAt DateTime?
-  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-
-  @@index([serviceId, sortOrder])
-}
-
-model ServiceAvailabilityRule {
-  id           String                     @id @default(cuid())
-  serviceId    String
-  weekday      Int
-  startMinute  Int
-  endMinute    Int
-  isActive     Boolean                    @default(true)
-  createdAt    DateTime                   @default(now())
-  updatedAt    DateTime                   @updatedAt
-  deletedAt    DateTime?
-  service      Service                    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  breaks       ServiceAvailabilityBreak[]
-
-  @@index([serviceId, weekday, isActive])
-}
-
-model ServiceAvailabilityBreak {
-  id                 String                  @id @default(cuid())
-  availabilityRuleId String
-  startMinute        Int
-  endMinute          Int
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
-  availabilityRule   ServiceAvailabilityRule @relation(fields: [availabilityRuleId], references: [id], onDelete: Cascade)
-
-  @@index([availabilityRuleId])
-}
-
-model ServiceScheduleOverride {
-  id           String               @id @default(cuid())
-  serviceId    String
-  overrideType ScheduleOverrideType
-  startsAt     DateTime
-  endsAt       DateTime
-  reason       String?              @db.VarChar(500)
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
-  deletedAt    DateTime?
-  service      Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-
-  @@index([serviceId, startsAt, endsAt])
-}
-
-model Reservation {
-  id                                 String                     @id @default(cuid())
-  serviceId                          String
-  customerId                         String
-  providerId                         String
-  brandId                            String?
-  status                             ReservationStatus          @default(PENDING)
-  requestedStartAt                   DateTime
-  requestedEndAt                     DateTime?
-  note                               String?                    @db.Text
-  manualApprovalDeadlineAt           DateTime?
-  rejectionReason                    String?                    @db.VarChar(500)
-  cancellationReason                 String?                    @db.VarChar(500)
-  customerChangeRequestReason        String?                    @db.VarChar(500)
-  providerChangeRequestReason        String?                    @db.VarChar(500)
-  completionMethod                   CompletionMethod?
-  approvedAt                         DateTime?
-  rejectedAt                         DateTime?
-  cancelledAt                        DateTime?
-  completedAt                        DateTime?
-  expiredAt                          DateTime?
-  noShowMarkedAt                     DateTime?
-  requiresManualApproval             Boolean                    @default(true)
-  waitingTimeMinutesSnapshot         Int
-  freeCancellationDeadlineSnapshot   Int?
-  serviceNameSnapshot                String                     @db.VarChar(120)
-  providerNameSnapshot               String                     @db.VarChar(120)
-  brandNameSnapshot                  String?                    @db.VarChar(120)
-  serviceTimezoneSnapshot            String                     @default("UTC") @db.VarChar(64)
-  priceSnapshot                      Decimal?                   @db.Decimal(10, 2)
-  currencySnapshot                   String?                    @db.VarChar(3)
-  createdAt                          DateTime                   @default(now())
-  updatedAt                          DateTime                   @updatedAt
-  service                            Service                    @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-  customer                           User                       @relation("ReservationCustomer", fields: [customerId], references: [id], onDelete: Restrict)
-  provider                           User                       @relation("ReservationProvider", fields: [providerId], references: [id], onDelete: Restrict)
-  brand                              Brand?                     @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  statusHistory                      ReservationStatusHistory[]
-  changeRequests                     ReservationChangeRequest[]
-  review                             Review?
-  penaltyPoints                      PenaltyPoint[]
-
-  @@index([customerId, status])
-  @@index([providerId, status])
-  @@index([serviceId, status])
-  @@index([requestedStartAt])
-  @@index([manualApprovalDeadlineAt])
-}
-
-model ReservationStatusHistory {
-  id                     String              @id @default(cuid())
-  reservationId          String
-  fromStatus             ReservationStatus?
-  toStatus               ReservationStatus
-  reason                 String?             @db.VarChar(500)
-  actorType              ReservationActorType
-  actorUserId            String?
-  actorAdminCredentialId String?
-  metadata               Json?
-  createdAt              DateTime            @default(now())
-  reservation            Reservation         @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  actorUser              User?               @relation("ReservationHistoryActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
-  actorAdminCredential   AdminCredential?    @relation("ReservationHistoryActorAdmin", fields: [actorAdminCredentialId], references: [id], onDelete: SetNull)
-
-  @@index([reservationId, createdAt])
-}
-
-model ReservationChangeRequest {
-  id               String                         @id @default(cuid())
-  reservationId    String
-  requesterType    ReservationPartyType
-  requesterUserId  String
-  proposedStartAt  DateTime?
-  proposedEndAt    DateTime?
-  reason           String                         @db.VarChar(500)
-  status           ReservationChangeRequestStatus @default(PENDING)
-  reviewedByUserId String?
-  reviewedAt       DateTime?
-  resolvedAt       DateTime?
-  resolutionNote   String?                        @db.VarChar(500)
-  createdAt        DateTime                       @default(now())
-  updatedAt        DateTime                       @updatedAt
-  reservation      Reservation                    @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  requesterUser    User                           @relation("ReservationChangeRequester", fields: [requesterUserId], references: [id], onDelete: Restrict)
-  reviewedByUser   User?                          @relation("ReservationChangeReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-
-  @@index([reservationId, status])
-  @@index([requesterUserId])
-}
-
-model Review {
-  id          String         @id @default(cuid())
-  reservationId String       @unique
-  authorId    String
-  comment     String         @db.Text
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  deletedAt   DateTime?
-  reservation Reservation    @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  author      User           @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Restrict)
-  targets     ReviewTarget[]
-  reply       ReviewReply?
-  reports     ReviewReport[]
-
-  @@index([authorId, createdAt])
-}
-
-model ReviewTarget {
-  id         String           @id @default(cuid())
-  reviewId    String
-  targetType ReviewTargetType
-  targetId   String           @db.VarChar(191)
-  rating     Int
-  createdAt  DateTime         @default(now())
-  review     Review           @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-
-  @@unique([reviewId, targetType, targetId])
-  @@index([targetType, targetId])
-}
-
-model ReviewReply {
-  id        String   @id @default(cuid())
-  reviewId   String   @unique
-  authorId   String
-  message   String   @db.Text
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  deletedAt DateTime?
-  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  author    User     @relation("ReviewReplyAuthor", fields: [authorId], references: [id], onDelete: Restrict)
-}
-
-model ReviewReport {
-  id                        String              @id @default(cuid())
-  reviewId                  String
-  reporterUserId            String
-  reason                    String              @db.VarChar(255)
-  details                   String?             @db.Text
-  status                    ReviewReportStatus  @default(OPEN)
-  reviewedByAdminCredentialId String?
-  reviewedAt                DateTime?
-  resolutionNote            String?             @db.VarChar(500)
-  createdAt                 DateTime            @default(now())
-  updatedAt                 DateTime            @updatedAt
-  review                    Review              @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  reporterUser              User                @relation("ReviewReportReporter", fields: [reporterUserId], references: [id], onDelete: Restrict)
-  reviewedByAdminCredential AdminCredential?    @relation("ReviewReportReviewer", fields: [reviewedByAdminCredentialId], references: [id], onDelete: SetNull)
-
-  @@index([reviewId, status])
-  @@index([reporterUserId])
-}
-
-model PenaltyPoint {
-  id          String          @id @default(cuid())
-  userId      String
-  reservationId String
-  reason      PenaltyReason
-  issuedAt    DateTime        @default(now())
-  expiresAt   DateTime
-  revokedAt   DateTime?
-  isActive    Boolean         @default(true)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  user        User            @relation(fields: [userId], references: [id], onDelete: Restrict)
-  reservation Reservation     @relation(fields: [reservationId], references: [id], onDelete: Restrict)
-  disputes    PenaltyDispute[]
-
-  @@unique([reservationId, reason])
-  @@index([userId, isActive, expiresAt])
-}
-
-model PenaltyDispute {
-  id                        String                @id @default(cuid())
-  penaltyPointId            String
-  userId                    String
-  reason                    String                @db.VarChar(255)
-  details                   String?               @db.Text
-  status                    PenaltyDisputeStatus  @default(PENDING)
-  reviewedByAdminCredentialId String?
-  reviewedAt                DateTime?
-  resolutionNote            String?               @db.VarChar(500)
-  createdAt                 DateTime              @default(now())
-  updatedAt                 DateTime              @updatedAt
-  penaltyPoint              PenaltyPoint          @relation(fields: [penaltyPointId], references: [id], onDelete: Cascade)
-  user                      User                  @relation("PenaltyDisputeAuthor", fields: [userId], references: [id], onDelete: Restrict)
-  reviewedByAdminCredential AdminCredential?      @relation("PenaltyDisputeReviewer", fields: [reviewedByAdminCredentialId], references: [id], onDelete: SetNull)
-
-  @@index([penaltyPointId, status])
-  @@index([userId])
-}
-
-model Notification {
-  id          String             @id @default(cuid())
-  userId      String
-  type        NotificationType
-  title       String             @db.VarChar(140)
-  body        String             @db.VarChar(500)
-  routeScreen NotificationScreen
-  routeParams Json?
-  isRead      Boolean            @default(false)
-  readAt      DateTime?
-  deliveredAt DateTime?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, isRead, createdAt])
-}
-
-model PushDevice {
-  id          String       @id @default(cuid())
-  userId      String
-  platform    PushPlatform
-  deviceToken String       @unique @db.VarChar(191)
-  deviceName  String?      @db.VarChar(120)
-  appVersion  String?      @db.VarChar(64)
-  lastSeenAt  DateTime?
-  isActive    Boolean      @default(true)
-  revokedAt   DateTime?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, isActive])
-}
-
-model VisibilityLabelAssignment {
-  id                        String                @id @default(cuid())
-  targetType                VisibilityTargetType
-  targetId                  String                @db.VarChar(191)
-  label                     VisibilityLabel
-  source                    VisibilitySourceType  @default(ADMIN)
-  startsAt                  DateTime?
-  endsAt                    DateTime?
-  assignedByAdminCredentialId String?
-  notes                     String?               @db.VarChar(500)
-  createdAt                 DateTime              @default(now())
-  updatedAt                 DateTime              @updatedAt
-  assignedByAdminCredential AdminCredential?      @relation("VisibilityLabelAssigner", fields: [assignedByAdminCredentialId], references: [id], onDelete: SetNull)
-
-  @@index([targetType, targetId, label])
-  @@index([startsAt, endsAt])
-}
-
-model SponsoredPlacement {
-  id                      String                    @id @default(cuid())
-  targetType              VisibilityTargetType
-  targetId                String                    @db.VarChar(191)
-  slotKey                 String                    @db.VarChar(120)
-  status                  SponsoredPlacementStatus  @default(ACTIVE)
-  startsAt                DateTime
-  endsAt                  DateTime
-  createdByAdminCredentialId String?
-  metadata                Json?
-  createdAt               DateTime                  @default(now())
-  updatedAt               DateTime                  @updatedAt
-  createdByAdminCredential AdminCredential?         @relation("SponsoredPlacementCreator", fields: [createdByAdminCredentialId], references: [id], onDelete: SetNull)
-
-  @@index([targetType, targetId, status])
-  @@index([slotKey, startsAt, endsAt])
-}
-
-model AbuseReport {
-  id                        String             @id @default(cuid())
-  reporterUserId            String?
-  targetType                AbuseTargetType
-  targetId                  String             @db.VarChar(191)
-  reason                    String             @db.VarChar(255)
-  details                   String?            @db.Text
-  status                    AbuseReportStatus  @default(OPEN)
-  reviewedByAdminCredentialId String?
-  reviewedAt                DateTime?
-  resolutionNote            String?            @db.VarChar(500)
-  createdAt                 DateTime           @default(now())
-  updatedAt                 DateTime           @updatedAt
-  reporterUser              User?              @relation("AbuseReportReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
-  reviewedByAdminCredential AdminCredential?   @relation("AbuseReportReviewer", fields: [reviewedByAdminCredentialId], references: [id], onDelete: SetNull)
-
-  @@index([targetType, targetId, status])
-  @@index([reporterUserId])
-}
-
-model AdminCredential {
-  id                        String                     @id @default(cuid())
-  email                     String                     @unique @db.VarChar(191)
-  passwordHash              String                     @db.VarChar(191)
-  role                      AdminRole                  @default(MODERATOR)
-  isActive                  Boolean                    @default(true)
-  lastLoginAt               DateTime?
-  createdAt                 DateTime                   @default(now())
-  updatedAt                 DateTime                   @updatedAt
-  deletedAt                 DateTime?
-  reservationStatusActions  ReservationStatusHistory[] @relation("ReservationHistoryActorAdmin")
-  reviewReportsReviewed     ReviewReport[]             @relation("ReviewReportReviewer")
-  penaltyDisputesReviewed   PenaltyDispute[]           @relation("PenaltyDisputeReviewer")
-  visibilityAssignments     VisibilityLabelAssignment[] @relation("VisibilityLabelAssigner")
-  sponsoredPlacements       SponsoredPlacement[]       @relation("SponsoredPlacementCreator")
-  abuseReportsReviewed      AbuseReport[]              @relation("AbuseReportReviewer")
-  auditLogs                 AuditLog[]                 @relation("AuditAdminActor")
-
-  @@index([isActive, role])
-}
-
-model AuditLog {
-  id                     String           @id @default(cuid())
-  actorType              AuditActorType
-  actorUserId            String?
-  actorAdminCredentialId String?
-  action                 String           @db.VarChar(120)
-  entityType             String           @db.VarChar(120)
-  entityId               String?          @db.VarChar(191)
-  payload                Json?
-  createdAt              DateTime         @default(now())
-  actorUser              User?            @relation("AuditUserActor", fields: [actorUserId], references: [id], onDelete: SetNull)
-  actorAdminCredential   AdminCredential? @relation("AuditAdminActor", fields: [actorAdminCredentialId], references: [id], onDelete: SetNull)
-
-  @@index([entityType, entityId])
-  @@index([createdAt])
+  @@index([userId, purpose, consumedAt], map: "email_magic_links_user_purpose_consumed_idx")
+  @@index([email, purpose, expiresAt], map: "email_magic_links_email_purpose_expires_idx")
+  @@map("email_magic_links")
 }

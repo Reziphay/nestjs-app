@@ -1,12 +1,23 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
-import configuration from 'src/common/config/configuration';
-import { validateEnv } from 'src/common/config/env.validation';
-import { AuthModule } from 'src/modules/auth/auth.module';
-import { HealthModule } from 'src/modules/health/health.module';
-import { PrismaModule } from 'src/modules/prisma/prisma.module';
-import { UsersModule } from 'src/modules/users/users.module';
+import {
+  appConfig,
+  authConfig,
+  databaseConfig,
+  redisConfig,
+  validateEnv,
+} from './config';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { RolesGuard } from './common/guards/roles.guard';
+import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor';
+import { AuthModule } from './auth/auth.module';
+import { HealthModule } from './health/health.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -14,13 +25,39 @@ import { UsersModule } from 'src/modules/users/users.module';
       isGlobal: true,
       cache: true,
       expandVariables: true,
-      load: [configuration],
+      envFilePath: ['.env.local', '.env'],
+      load: [appConfig, authConfig, databaseConfig, redisConfig],
       validate: validateEnv,
     }),
-    AuthModule,
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 60,
+      },
+    ]),
     PrismaModule,
-    HealthModule,
+    RedisModule,
+    AuthModule,
     UsersModule,
+    HealthModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: HttpExceptionFilter,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ResponseEnvelopeInterceptor,
+    },
   ],
 })
 export class AppModule {}

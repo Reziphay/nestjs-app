@@ -1,7 +1,7 @@
-dist
-coverage
 node_modules
+dist
 .env
 .env.local
-todo_backend_reziphay.md
-api_contract_mobile_reziphay.md
+coverage
+.DS_Store
+*.md

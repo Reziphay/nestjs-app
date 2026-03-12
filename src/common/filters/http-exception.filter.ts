@@ -4,101 +4,127 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
+import type { Request, Response } from 'express';
 
-type ErrorBody = {
-  code: string;
+type ErrorPayload = {
   message: string;
-  details: Record<string, unknown>;
+  code: string;
+  details?: unknown;
 };
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(HttpExceptionFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    const status =
-      exception instanceof HttpException
-        ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
-    const errorBody = this.normalizeException(exception);
+    const status = this.getStatus(exception);
+    const error = this.normalizeError(exception);
+
+    if (status >= 500) {
+      this.logger.error(
+        `${request.method} ${request.url} failed: ${error.message}`,
+        exception instanceof Error ? exception.stack : undefined,
+      );
+    }
 
     response.status(status).json({
       success: false,
-      error: {
-        ...errorBody,
-        details: {
-          path: request.url,
-          timestamp: new Date().toISOString(),
-          ...errorBody.details,
-        },
-      },
+      error,
+      timestamp: new Date().toISOString(),
+      path: request.url,
     });
   }
 
-  private normalizeException(exception: unknown): ErrorBody {
-    if (!(exception instanceof HttpException)) {
-      return {
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Internal server error',
-        details: {},
-      };
+  private getStatus(exception: unknown): number {
+    if (exception instanceof HttpException) {
+      return exception.getStatus();
     }
 
-    const response = exception.getResponse();
+    if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      if (exception.code === 'P2002') {
+        return HttpStatus.CONFLICT;
+      }
 
-    if (typeof response === 'string') {
-      return {
-        code: this.getErrorCode(exception.getStatus()),
-        message: response,
-        details: {},
-      };
+      return HttpStatus.BAD_REQUEST;
     }
 
-    if (Array.isArray((response as { message?: unknown }).message)) {
-      return {
-        code: 'VALIDATION_ERROR',
-        message: 'Validation failed',
-        details: {
-          fields: (response as { message: unknown[] }).message,
-        },
-      };
+    return HttpStatus.INTERNAL_SERVER_ERROR;
+  }
+
+  private normalizeError(exception: unknown): ErrorPayload {
+    if (exception instanceof HttpException) {
+      const response = exception.getResponse();
+
+      if (typeof response === 'string') {
+        return {
+          message: response,
+          code: this.httpStatusToCode(exception.getStatus()),
+        };
+      }
+
+      if (typeof response === 'object' && response !== null) {
+        const payload = response as Record<string, unknown>;
+        const message = payload['message'];
+
+        return {
+          message:
+            typeof message === 'string'
+              ? message
+              : Array.isArray(message)
+                ? message.join(', ')
+                : exception.message,
+          code:
+            typeof payload['errorCode'] === 'string'
+              ? payload['errorCode']
+              : this.httpStatusToCode(exception.getStatus()),
+          details: payload,
+        };
+      }
     }
 
-    const typedResponse = response as {
-      code?: string;
-      message?: string;
-      details?: Record<string, unknown>;
-      error?: string;
-    };
+    if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      if (exception.code === 'P2002') {
+        return {
+          message: 'A unique constraint would be violated by this operation.',
+          code: 'UNIQUE_CONSTRAINT_VIOLATION',
+          details: exception.meta,
+        };
+      }
+
+      return {
+        message: 'A database constraint prevented the request from succeeding.',
+        code: 'DATABASE_ERROR',
+        details: exception.meta,
+      };
+    }
 
     return {
-      code: typedResponse.code ?? this.getErrorCode(exception.getStatus()),
-      message:
-        typedResponse.message ??
-        typedResponse.error ??
-        'Request could not be processed',
-      details: typedResponse.details ?? {},
+      message: 'Internal server error',
+      code: 'INTERNAL_SERVER_ERROR',
     };
   }
 
-  private getErrorCode(status: number): string {
-    switch (status as HttpStatus) {
-      case HttpStatus.BAD_REQUEST:
+  private httpStatusToCode(status: number): string {
+    switch (status) {
+      case 400:
         return 'BAD_REQUEST';
-      case HttpStatus.UNAUTHORIZED:
+      case 401:
         return 'UNAUTHORIZED';
-      case HttpStatus.FORBIDDEN:
+      case 403:
         return 'FORBIDDEN';
-      case HttpStatus.NOT_FOUND:
+      case 404:
         return 'NOT_FOUND';
-      case HttpStatus.CONFLICT:
+      case 409:
         return 'CONFLICT';
-      case HttpStatus.TOO_MANY_REQUESTS:
-        return 'RATE_LIMITED';
+      case 429:
+        return 'TOO_MANY_REQUESTS';
       default:
         return 'HTTP_ERROR';
     }
