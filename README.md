@@ -12,6 +12,8 @@ Current backend foundation for the Reziphay MVP. This app is a NestJS modular mo
 - brands, memberships, and join requests
 - service categories, services, availability, and photo upload base
 - reservations, change requests, manual approval expiration jobs, and completion flows
+- reviews, rating stats, in-app notifications, push-token registration, no-show penalties, and objections
+- admin moderation, visibility-label management, analytics, and discovery search
 
 ## Stack
 
@@ -70,7 +72,7 @@ pnpm test
 pnpm test:e2e
 ```
 
-## API surface through Phase 3
+## API surface through Phase 5
 
 - `POST /api/v1/auth/request-phone-otp`
 - `POST /api/v1/auth/verify-phone-otp`
@@ -118,6 +120,28 @@ pnpm test:e2e
 - `POST /api/v1/reservations/change-requests/:id/reject`
 - `POST /api/v1/reservations/:id/complete-manually`
 - `POST /api/v1/reservations/:id/complete-by-qr`
+- `POST /api/v1/reviews`
+- `DELETE /api/v1/reviews/:id`
+- `POST /api/v1/reviews/:id/replies`
+- `POST /api/v1/reviews/:id/report`
+- `GET /api/v1/penalties/me`
+- `POST /api/v1/reservations/:id/objections`
+- `GET /api/v1/notifications`
+- `PATCH /api/v1/notifications/:id/read`
+- `POST /api/v1/notifications/read-all`
+- `POST /api/v1/push-tokens`
+- `GET /api/v1/search`
+- `GET /api/v1/admin/reports`
+- `POST /api/v1/admin/reports/:id/resolve`
+- `GET /api/v1/admin/reservation-objections`
+- `POST /api/v1/admin/reservation-objections/:id/resolve`
+- `POST /api/v1/admin/users/:id/suspend`
+- `POST /api/v1/admin/users/:id/close`
+- `GET /api/v1/admin/visibility-labels`
+- `POST /api/v1/admin/visibility-labels`
+- `POST /api/v1/admin/visibility-labels/:id/assign`
+- `POST /api/v1/admin/visibility-labels/:id/unassign`
+- `GET /api/v1/admin/analytics/overview`
 
 Swagger is exposed at [http://localhost:3000/api/docs](http://localhost:3000/api/docs) when `SWAGGER_ENABLED=true`.
 
@@ -134,6 +158,7 @@ Seeded domain data:
 - brand: `Studio Reziphay`
 - category: `Barber`, `Dentistry`, `Beauty`
 - service: `Classic Haircut`
+- visibility labels: `featured`, `sponsored`, `vip`
 
 Phone OTP delivery is intentionally stubbed in Phase 1. In non-production environments, the requested OTP or email verification token is returned in the API response so local testing stays fast.
 
@@ -142,3 +167,9 @@ File uploads use the local storage driver in Phase 2 and write into `.local-stor
 Manual-approval reservations now use BullMQ with Redis for the 5-minute timeout flow. The queue worker runs inside the same Nest process in local development, so `pnpm dev` is enough as long as Redis is up.
 
 For confirmed reservations, the owner-facing `GET /api/v1/reservations/:id` response includes a short-lived signed QR completion payload that the customer can submit to `POST /api/v1/reservations/:id/complete-by-qr`.
+
+Phase 4 adds recurring BullMQ maintenance for no-show detection and penalty cleanup. Those jobs are also processed inside the same Nest process in local development.
+
+Notifications are persisted in-app and push tokens are stored, but real FCM delivery is still stubbed behind the notifications service and has not been wired to Firebase yet.
+
+Phase 5 adds admin moderation APIs, admin audit logging, reusable visibility labels for brands/services/providers, and PostgreSQL-backed discovery search across services, brands, and provider profiles.

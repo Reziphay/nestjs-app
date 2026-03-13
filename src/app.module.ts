@@ -14,15 +14,20 @@ import {
   storageConfig,
   validateEnv,
 } from './config';
+import { AdminModule } from './admin/admin.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { RolesGuard } from './common/guards/roles.guard';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor';
 import { AuthModule } from './auth/auth.module';
 import { BrandsModule } from './brands/brands.module';
 import { HealthModule } from './health/health.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { PenaltiesModule } from './penalties/penalties.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { ReservationsModule } from './reservations/reservations.module';
+import { ReviewsModule } from './reviews/reviews.module';
+import { SearchModule } from './search/search.module';
 import { ServiceCategoriesModule } from './service-categories/service-categories.module';
 import { ServicesModule } from './services/services.module';
 import { StorageModule } from './storage/storage.module';
@@ -60,11 +65,16 @@ import { UsersModule } from './users/users.module';
     PrismaModule,
     RedisModule,
     AuthModule,
+    AdminModule,
     UsersModule,
+    NotificationsModule,
     BrandsModule,
     ServiceCategoriesModule,
     ServicesModule,
     ReservationsModule,
+    ReviewsModule,
+    PenaltiesModule,
+    SearchModule,
     StorageModule,
     HealthModule,
   ],

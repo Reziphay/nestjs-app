@@ -106,6 +106,83 @@ enum ReservationCompletionMethod {
   MANUAL
 }
 
+enum PenaltyReason {
+  NO_SHOW
+}
+
+enum PenaltyActionType {
+  SUSPEND_1_MONTH
+  CLOSE_INDEFINITELY
+}
+
+enum ReservationObjectionType {
+  NO_SHOW_DISPUTE
+  OTHER
+}
+
+enum ReservationObjectionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum ReviewTargetType {
+  SERVICE
+  SERVICE_OWNER
+  BRAND
+}
+
+enum ReportTargetType {
+  USER
+  BRAND
+  SERVICE
+  REVIEW
+}
+
+enum ReportStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum NotificationType {
+  RESERVATION_RECEIVED
+  RESERVATION_CONFIRMED
+  RESERVATION_REJECTED
+  RESERVATION_CANCELLED
+  RESERVATION_CHANGE_REQUESTED
+  RESERVATION_COMPLETED
+  RESERVATION_EXPIRED
+  RESERVATION_NO_SHOW
+  PENALTY_APPLIED
+  REVIEW_RECEIVED
+  REVIEW_REPORTED
+  OBJECTION_RECEIVED
+}
+
+enum PushPlatform {
+  IOS
+  ANDROID
+  WEB
+}
+
+enum VisibilityTargetType {
+  BRAND
+  SERVICE
+  USER
+}
+
+enum AdminAuditTargetType {
+  USER
+  REPORT
+  RESERVATION_OBJECTION
+  VISIBILITY_LABEL
+  BRAND_VISIBILITY_ASSIGNMENT
+  SERVICE_VISIBILITY_ASSIGNMENT
+  USER_VISIBILITY_ASSIGNMENT
+}
+
 model User {
   id              String     @id @default(uuid()) @db.Uuid
   fullName        String     @map("full_name")
@@ -120,25 +197,44 @@ model User {
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
 
-  roles                          UserRole[]
-  authSessions                   AuthSession[]
-  emailMagicLinks                EmailMagicLink[]
-  ownedBrands                    Brand[]                       @relation("BrandOwner")
-  brandMemberships               BrandMembership[]
-  brandJoinRequests              BrandJoinRequest[]            @relation("BrandJoinRequestRequester")
-  reviewedBrandJoinRequests      BrandJoinRequest[]            @relation("BrandJoinRequestReviewer")
-  serviceAddresses               ServiceAddress[]              @relation("ServiceAddressOwner")
-  services                       Service[]                     @relation("ServiceOwner")
-  customerReservations           Reservation[]                 @relation("ReservationCustomer")
-  serviceOwnerReservations       Reservation[]                 @relation("ReservationServiceOwner")
-  reservationStatusHistory       ReservationStatusHistory[]    @relation("ReservationStatusActor")
-  requestedReservationChanges    ReservationChangeRequest[]    @relation("ReservationChangeRequestedBy")
-  reviewedReservationChanges     ReservationChangeRequest[]    @relation("ReservationChangeReviewedBy")
-  reservationCompletionActions   ReservationCompletionRecord[] @relation("ReservationCompletionActor")
-  verifiedReservationCompletions ReservationCompletionRecord[] @relation("ReservationCompletionVerifiedCustomer")
-  uploadedFiles                  FileObject[]                  @relation("UploadedByUser")
+  roles                               UserRole[]
+  authSessions                        AuthSession[]
+  emailMagicLinks                     EmailMagicLink[]
+  ownedBrands                         Brand[]                       @relation("BrandOwner")
+  brandMemberships                    BrandMembership[]
+  brandJoinRequests                   BrandJoinRequest[]            @relation("BrandJoinRequestRequester")
+  reviewedBrandJoinRequests           BrandJoinRequest[]            @relation("BrandJoinRequestReviewer")
+  serviceAddresses                    ServiceAddress[]              @relation("ServiceAddressOwner")
+  services                            Service[]                     @relation("ServiceOwner")
+  customerReservations                Reservation[]                 @relation("ReservationCustomer")
+  serviceOwnerReservations            Reservation[]                 @relation("ReservationServiceOwner")
+  reservationStatusHistory            ReservationStatusHistory[]    @relation("ReservationStatusActor")
+  requestedReservationChanges         ReservationChangeRequest[]    @relation("ReservationChangeRequestedBy")
+  reviewedReservationChanges          ReservationChangeRequest[]    @relation("ReservationChangeReviewedBy")
+  reservationCompletionActions        ReservationCompletionRecord[] @relation("ReservationCompletionActor")
+  verifiedReservationCompletions      ReservationCompletionRecord[] @relation("ReservationCompletionVerifiedCustomer")
+  penaltyPoints                       PenaltyPoint[]
+  penaltyActions                      PenaltyAction[]
+  reservationObjections               ReservationObjection[]
+  resolvedReservationObjections       ReservationObjection[]        @relation("ReservationObjectionResolver")
+  authoredReviews                     Review[]                      @relation("ReviewAuthor")
+  receivedServiceOwnerReviews         Review[]                      @relation("ReviewServiceOwner")
+  reviewReplies                       ReviewReply[]
+  reports                             Report[]                      @relation("ReportReporter")
+  handledReports                      Report[]                      @relation("ReportHandler")
+  notifications                       Notification[]
+  pushTokens                          PushToken[]
+  serviceOwnerRatingStat              ServiceOwnerRatingStat?
+  visibilityAssignments               UserVisibilityAssignment[]    @relation("VisibleUserAssignments")
+  createdVisibilityLabels             VisibilityLabel[]             @relation("VisibilityLabelCreator")
+  createdBrandVisibilityAssignments   BrandVisibilityAssignment[]   @relation("BrandVisibilityAssignmentCreator")
+  createdServiceVisibilityAssignments ServiceVisibilityAssignment[] @relation("ServiceVisibilityAssignmentCreator")
+  createdUserVisibilityAssignments    UserVisibilityAssignment[]    @relation("UserVisibilityAssignmentCreator")
+  adminAuditLogs                      AdminAuditLog[]               @relation("AdminAuditActor")
+  uploadedFiles                       FileObject[]                  @relation("UploadedByUser")
 
   @@index([status], map: "users_status_idx")
+  @@index([fullName], map: "users_full_name_idx")
   @@map("users")
 }
 
@@ -219,17 +315,21 @@ model Brand {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  owner            User               @relation("BrandOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  logoFile         FileObject?        @relation("BrandLogoFile", fields: [logoFileId], references: [id], onDelete: SetNull)
-  memberships      BrandMembership[]
-  joinRequests     BrandJoinRequest[]
-  addresses        BrandAddress[]
-  serviceAddresses ServiceAddress[]
-  services         Service[]
-  reservations     Reservation[]
+  owner                 User                        @relation("BrandOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  logoFile              FileObject?                 @relation("BrandLogoFile", fields: [logoFileId], references: [id], onDelete: SetNull)
+  memberships           BrandMembership[]
+  joinRequests          BrandJoinRequest[]
+  addresses             BrandAddress[]
+  serviceAddresses      ServiceAddress[]
+  services              Service[]
+  reservations          Reservation[]
+  reviews               Review[]
+  brandRatingStat       BrandRatingStat?
+  visibilityAssignments BrandVisibilityAssignment[]
 
   @@index([ownerUserId], map: "brands_owner_user_id_idx")
   @@index([status], map: "brands_status_idx")
+  @@index([name], map: "brands_name_idx")
   @@map("brands")
 }
 
@@ -360,6 +460,9 @@ model Service {
   availabilityRules      ServiceAvailabilityRule[]
   availabilityExceptions ServiceAvailabilityException[]
   reservations           Reservation[]
+  reviews                Review[]
+  ratingStat             ServiceRatingStat?
+  visibilityAssignments  ServiceVisibilityAssignment[]
 
   @@index([ownerUserId, isActive], map: "services_owner_user_id_is_active_idx")
   @@index([brandId], map: "services_brand_id_idx")
@@ -462,6 +565,9 @@ model Reservation {
   statusHistory     ReservationStatusHistory[]
   changeRequests    ReservationChangeRequest[]
   completionRecords ReservationCompletionRecord[]
+  penaltyPoints     PenaltyPoint[]
+  objections        ReservationObjection[]
+  reviews           Review[]
 
   @@index([customerUserId, status, createdAt], map: "reservations_customer_user_id_status_created_at_idx")
   @@index([serviceOwnerUserId, status, createdAt], map: "reservations_owner_user_id_status_created_at_idx")
@@ -527,4 +633,298 @@ model ReservationCompletionRecord {
   @@index([reservationId, createdAt], map: "reservation_completion_records_reservation_id_created_at_idx")
   @@index([completedByUserId], map: "reservation_completion_records_completed_by_idx")
   @@map("reservation_completion_records")
+}
+
+model PenaltyPoint {
+  id            String        @id @default(uuid()) @db.Uuid
+  userId        String        @map("user_id") @db.Uuid
+  reservationId String?       @map("reservation_id") @db.Uuid
+  points        Int           @default(1)
+  reason        PenaltyReason
+  expiresAt     DateTime      @map("expires_at")
+  isActive      Boolean       @default(true) @map("is_active")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  @@unique([reservationId, reason], map: "penalty_points_reservation_id_reason_key")
+  @@index([userId, isActive], map: "penalty_points_user_id_is_active_idx")
+  @@index([expiresAt, isActive], map: "penalty_points_expires_at_is_active_idx")
+  @@map("penalty_points")
+}
+
+model PenaltyAction {
+  id                String            @id @default(uuid()) @db.Uuid
+  userId            String            @map("user_id") @db.Uuid
+  triggeredByPoints Int               @map("triggered_by_points")
+  action            PenaltyActionType
+  startsAt          DateTime          @map("starts_at")
+  endsAt            DateTime?         @map("ends_at")
+  isActive          Boolean           @default(true) @map("is_active")
+  createdAt         DateTime          @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive], map: "penalty_actions_user_id_is_active_idx")
+  @@index([action, isActive], map: "penalty_actions_action_is_active_idx")
+  @@map("penalty_actions")
+}
+
+model ReservationObjection {
+  id                String                     @id @default(uuid()) @db.Uuid
+  reservationId     String                     @map("reservation_id") @db.Uuid
+  userId            String                     @map("user_id") @db.Uuid
+  objectionType     ReservationObjectionType   @map("objection_type")
+  reason            String
+  status            ReservationObjectionStatus @default(PENDING)
+  resolvedByAdminId String?                    @map("resolved_by_admin_id") @db.Uuid
+  resolvedAt        DateTime?                  @map("resolved_at")
+  createdAt         DateTime                   @default(now()) @map("created_at")
+  updatedAt         DateTime                   @updatedAt @map("updated_at")
+
+  reservation     Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resolvedByAdmin User?       @relation("ReservationObjectionResolver", fields: [resolvedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([reservationId, status], map: "reservation_objections_reservation_id_status_idx")
+  @@index([userId, status], map: "reservation_objections_user_id_status_idx")
+  @@map("reservation_objections")
+}
+
+model Review {
+  id                 String    @id @default(uuid()) @db.Uuid
+  reservationId      String    @map("reservation_id") @db.Uuid
+  authorUserId       String    @map("author_user_id") @db.Uuid
+  serviceId          String?   @map("service_id") @db.Uuid
+  serviceOwnerUserId String?   @map("service_owner_user_id") @db.Uuid
+  brandId            String?   @map("brand_id") @db.Uuid
+  rating             Int
+  comment            String
+  isDeleted          Boolean   @default(false) @map("is_deleted")
+  deletedAt          DateTime? @map("deleted_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  reservation      Reservation    @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  authorUser       User           @relation("ReviewAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+  service          Service?       @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  serviceOwnerUser User?          @relation("ReviewServiceOwner", fields: [serviceOwnerUserId], references: [id], onDelete: SetNull)
+  brand            Brand?         @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  targets          ReviewTarget[]
+  replies          ReviewReply[]
+
+  @@unique([reservationId, authorUserId], map: "reviews_reservation_id_author_user_id_key")
+  @@index([serviceId, isDeleted], map: "reviews_service_id_is_deleted_idx")
+  @@index([serviceOwnerUserId, isDeleted], map: "reviews_owner_id_is_deleted_idx")
+  @@index([brandId, isDeleted], map: "reviews_brand_id_is_deleted_idx")
+  @@map("reviews")
+}
+
+model ReviewTarget {
+  id         String           @id @default(uuid()) @db.Uuid
+  reviewId   String           @map("review_id") @db.Uuid
+  targetType ReviewTargetType @map("target_type")
+  targetId   String           @map("target_id") @db.Uuid
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, targetType], map: "review_targets_review_id_target_type_key")
+  @@index([targetType, targetId], map: "review_targets_target_type_target_id_idx")
+  @@map("review_targets")
+}
+
+model ReviewReply {
+  id           String   @id @default(uuid()) @db.Uuid
+  reviewId     String   @map("review_id") @db.Uuid
+  authorUserId String   @map("author_user_id") @db.Uuid
+  comment      String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  review     Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  authorUser User   @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, authorUserId], map: "review_replies_review_id_author_user_id_key")
+  @@index([reviewId, createdAt], map: "review_replies_review_id_created_at_idx")
+  @@map("review_replies")
+}
+
+model Report {
+  id               String           @id @default(uuid()) @db.Uuid
+  reporterUserId   String           @map("reporter_user_id") @db.Uuid
+  targetType       ReportTargetType @map("target_type")
+  targetId         String           @map("target_id") @db.Uuid
+  reason           String
+  status           ReportStatus     @default(OPEN)
+  handledByAdminId String?          @map("handled_by_admin_id") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at")
+  resolvedAt       DateTime?        @map("resolved_at")
+
+  reporterUser   User  @relation("ReportReporter", fields: [reporterUserId], references: [id], onDelete: Cascade)
+  handledByAdmin User? @relation("ReportHandler", fields: [handledByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([reporterUserId, status], map: "reports_reporter_user_id_status_idx")
+  @@index([targetType, targetId, status], map: "reports_target_type_target_id_status_idx")
+  @@map("reports")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType
+  title     String
+  body      String
+  dataJson  Json?            @map("data_json")
+  isRead    Boolean          @default(false) @map("is_read")
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt], map: "notifications_user_id_is_read_created_at_idx")
+  @@map("notifications")
+}
+
+model PushToken {
+  id         String       @id @default(uuid()) @db.Uuid
+  userId     String       @map("user_id") @db.Uuid
+  platform   PushPlatform
+  token      String       @unique
+  lastSeenAt DateTime     @map("last_seen_at")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, lastSeenAt], map: "push_tokens_user_id_last_seen_at_idx")
+  @@map("push_tokens")
+}
+
+model ServiceRatingStat {
+  serviceId   String   @id @map("service_id") @db.Uuid
+  avgRating   Decimal  @default(0) @map("avg_rating") @db.Decimal(4, 2)
+  reviewCount Int      @default(0) @map("review_count")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@map("service_rating_stats")
+}
+
+model ServiceOwnerRatingStat {
+  userId      String   @id @map("user_id") @db.Uuid
+  avgRating   Decimal  @default(0) @map("avg_rating") @db.Decimal(4, 2)
+  reviewCount Int      @default(0) @map("review_count")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("service_owner_rating_stats")
+}
+
+model BrandRatingStat {
+  brandId     String   @id @map("brand_id") @db.Uuid
+  avgRating   Decimal  @default(0) @map("avg_rating") @db.Decimal(4, 2)
+  reviewCount Int      @default(0) @map("review_count")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@map("brand_rating_stats")
+}
+
+model VisibilityLabel {
+  id               String               @id @default(uuid()) @db.Uuid
+  targetType       VisibilityTargetType @map("target_type")
+  name             String
+  slug             String
+  description      String?
+  priority         Int                  @default(0)
+  isActive         Boolean              @default(true) @map("is_active")
+  createdByAdminId String               @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+
+  createdByAdmin     User                          @relation("VisibilityLabelCreator", fields: [createdByAdminId], references: [id], onDelete: Cascade)
+  brandAssignments   BrandVisibilityAssignment[]
+  serviceAssignments ServiceVisibilityAssignment[]
+  userAssignments    UserVisibilityAssignment[]
+
+  @@unique([targetType, slug], map: "visibility_labels_target_type_slug_key")
+  @@index([targetType, isActive, priority], map: "visibility_labels_target_type_active_priority_idx")
+  @@map("visibility_labels")
+}
+
+model BrandVisibilityAssignment {
+  id               String    @id @default(uuid()) @db.Uuid
+  labelId          String    @map("label_id") @db.Uuid
+  brandId          String    @map("brand_id") @db.Uuid
+  startsAt         DateTime  @default(now()) @map("starts_at")
+  endsAt           DateTime? @map("ends_at")
+  createdByAdminId String    @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  label          VisibilityLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  brand          Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  createdByAdmin User            @relation("BrandVisibilityAssignmentCreator", fields: [createdByAdminId], references: [id], onDelete: Cascade)
+
+  @@index([labelId, startsAt, endsAt], map: "brand_visibility_assignments_label_period_idx")
+  @@index([brandId, startsAt, endsAt], map: "brand_visibility_assignments_brand_period_idx")
+  @@map("brand_visibility_assignments")
+}
+
+model ServiceVisibilityAssignment {
+  id               String    @id @default(uuid()) @db.Uuid
+  labelId          String    @map("label_id") @db.Uuid
+  serviceId        String    @map("service_id") @db.Uuid
+  startsAt         DateTime  @default(now()) @map("starts_at")
+  endsAt           DateTime? @map("ends_at")
+  createdByAdminId String    @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  label          VisibilityLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  service        Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  createdByAdmin User            @relation("ServiceVisibilityAssignmentCreator", fields: [createdByAdminId], references: [id], onDelete: Cascade)
+
+  @@index([labelId, startsAt, endsAt], map: "service_visibility_assignments_label_period_idx")
+  @@index([serviceId, startsAt, endsAt], map: "service_visibility_assignments_service_period_idx")
+  @@map("service_visibility_assignments")
+}
+
+model UserVisibilityAssignment {
+  id               String    @id @default(uuid()) @db.Uuid
+  labelId          String    @map("label_id") @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  startsAt         DateTime  @default(now()) @map("starts_at")
+  endsAt           DateTime? @map("ends_at")
+  createdByAdminId String    @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  label          VisibilityLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  user           User            @relation("VisibleUserAssignments", fields: [userId], references: [id], onDelete: Cascade)
+  createdByAdmin User            @relation("UserVisibilityAssignmentCreator", fields: [createdByAdminId], references: [id], onDelete: Cascade)
+
+  @@index([labelId, startsAt, endsAt], map: "user_visibility_assignments_label_period_idx")
+  @@index([userId, startsAt, endsAt], map: "user_visibility_assignments_user_period_idx")
+  @@map("user_visibility_assignments")
+}
+
+model AdminAuditLog {
+  id          String               @id @default(uuid()) @db.Uuid
+  actorUserId String               @map("actor_user_id") @db.Uuid
+  action      String
+  targetType  AdminAuditTargetType @map("target_type")
+  targetId    String               @map("target_id") @db.Uuid
+  detailsJson Json?                @map("details_json")
+  createdAt   DateTime             @default(now()) @map("created_at")
+
+  actorUser User @relation("AdminAuditActor", fields: [actorUserId], references: [id], onDelete: Cascade)
+
+  @@index([actorUserId, createdAt], map: "admin_audit_logs_actor_created_at_idx")
+  @@index([targetType, targetId, createdAt], map: "admin_audit_logs_target_created_at_idx")
+  @@map("admin_audit_logs")
 }

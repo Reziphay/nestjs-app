@@ -110,6 +110,10 @@ describe('ReservationsService', () => {
       completionRecords: [],
     });
     const schedulePendingExpiration = jest.fn().mockResolvedValue(undefined);
+    const notificationsService = {
+      notifyReservationReceived: jest.fn().mockResolvedValue(undefined),
+      notifyReservationConfirmed: jest.fn().mockResolvedValue(undefined),
+    };
 
     const prisma = {
       userRole: {
@@ -145,6 +149,7 @@ describe('ReservationsService', () => {
       {
         schedulePendingExpiration,
       } as any,
+      notificationsService as any,
       new JwtService(),
       reservationConfig as any,
     );
@@ -315,6 +320,9 @@ describe('ReservationsService', () => {
     const service = new ReservationsService(
       prisma,
       {} as any,
+      {
+        notifyReservationConfirmed: jest.fn().mockResolvedValue(undefined),
+      } as any,
       new JwtService(),
       reservationConfig as any,
     );
@@ -466,6 +474,9 @@ describe('ReservationsService', () => {
     const service = new ReservationsService(
       prisma,
       {} as any,
+      {
+        notifyReservationCompleted: jest.fn().mockResolvedValue(undefined),
+      } as any,
       jwtService,
       reservationConfig as any,
     );
@@ -515,6 +526,11 @@ describe('ReservationsService', () => {
                 findUnique: reservationFindUnique,
                 update: reservationUpdate,
               },
+              service: {
+                findUnique: jest.fn().mockResolvedValue({
+                  name: 'Classic Haircut',
+                }),
+              },
               reservationChangeRequest: {
                 updateMany: reservationChangeRequestUpdateMany,
               },
@@ -529,6 +545,9 @@ describe('ReservationsService', () => {
     const service = new ReservationsService(
       prisma,
       {} as any,
+      {
+        notifyReservationExpired: jest.fn().mockResolvedValue(undefined),
+      } as any,
       new JwtService(),
       reservationConfig as any,
     );

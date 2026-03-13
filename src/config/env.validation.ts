@@ -120,6 +120,18 @@ class EnvironmentVariables {
   @IsString()
   S3_SECRET_KEY?: string;
 
+  @IsOptional()
+  @IsString()
+  FCM_PROJECT_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  FCM_CLIENT_EMAIL?: string;
+
+  @IsOptional()
+  @IsString()
+  FCM_PRIVATE_KEY?: string;
+
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   SWAGGER_ENABLED!: boolean;

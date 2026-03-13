@@ -9,6 +9,7 @@ import {
   PrismaClient,
   ServiceType,
   UserStatus,
+  VisibilityTargetType,
 } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -109,6 +110,11 @@ async function main(): Promise<void> {
   const demoOwner = await prisma.user.findUniqueOrThrow({
     where: {
       phone: '+10000000003',
+    },
+  });
+  const adminUser = await prisma.user.findUniqueOrThrow({
+    where: {
+      phone: '+10000000001',
     },
   });
 
@@ -291,6 +297,118 @@ async function main(): Promise<void> {
         isActive: true,
       },
     ],
+  });
+
+  const visibilityLabels = [
+    {
+      targetType: VisibilityTargetType.BRAND,
+      name: 'Featured',
+      slug: 'featured',
+      description: 'Highlights a brand in discovery.',
+      priority: 80,
+    },
+    {
+      targetType: VisibilityTargetType.SERVICE,
+      name: 'Sponsored',
+      slug: 'sponsored',
+      description: 'Prioritizes a service in discovery.',
+      priority: 100,
+    },
+    {
+      targetType: VisibilityTargetType.USER,
+      name: 'VIP',
+      slug: 'vip',
+      description: 'Highlights a provider profile in discovery.',
+      priority: 60,
+    },
+  ];
+
+  for (const visibilityLabel of visibilityLabels) {
+    await prisma.visibilityLabel.upsert({
+      where: {
+        targetType_slug: {
+          targetType: visibilityLabel.targetType,
+          slug: visibilityLabel.slug,
+        },
+      },
+      update: {
+        name: visibilityLabel.name,
+        description: visibilityLabel.description,
+        priority: visibilityLabel.priority,
+        isActive: true,
+        createdByAdminId: adminUser.id,
+      },
+      create: {
+        ...visibilityLabel,
+        isActive: true,
+        createdByAdminId: adminUser.id,
+      },
+    });
+  }
+
+  const featuredBrandLabel = await prisma.visibilityLabel.findUniqueOrThrow({
+    where: {
+      targetType_slug: {
+        targetType: VisibilityTargetType.BRAND,
+        slug: 'featured',
+      },
+    },
+  });
+  const sponsoredServiceLabel = await prisma.visibilityLabel.findUniqueOrThrow({
+    where: {
+      targetType_slug: {
+        targetType: VisibilityTargetType.SERVICE,
+        slug: 'sponsored',
+      },
+    },
+  });
+  const vipUserLabel = await prisma.visibilityLabel.findUniqueOrThrow({
+    where: {
+      targetType_slug: {
+        targetType: VisibilityTargetType.USER,
+        slug: 'vip',
+      },
+    },
+  });
+
+  await prisma.brandVisibilityAssignment.deleteMany({
+    where: {
+      brandId: demoBrand.id,
+    },
+  });
+  await prisma.serviceVisibilityAssignment.deleteMany({
+    where: {
+      serviceId: demoService.id,
+    },
+  });
+  await prisma.userVisibilityAssignment.deleteMany({
+    where: {
+      userId: demoOwner.id,
+    },
+  });
+
+  await prisma.brandVisibilityAssignment.create({
+    data: {
+      labelId: featuredBrandLabel.id,
+      brandId: demoBrand.id,
+      createdByAdminId: adminUser.id,
+    },
+  });
+
+  await prisma.serviceVisibilityAssignment.create({
+    data: {
+      labelId: sponsoredServiceLabel.id,
+      serviceId: demoService.id,
+      createdByAdminId: adminUser.id,
+    },
+  });
+
+  await prisma.userVisibilityAssignment.create({
+    data: {
+      labelId: vipUserLabel.id,
+      userId: demoOwner.id,
+      createdByAdminId: adminUser.id,
+    },
   });
 }
 

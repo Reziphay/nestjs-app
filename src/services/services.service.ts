@@ -21,6 +21,7 @@ import {
   UpdateServiceDto,
 } from './dto/create-service.dto';
 import { ListServicesDto } from './dto/list-services.dto';
+import { serializeActiveVisibilityLabels } from '../common/utils/visibility.util';
 import {
   ReplaceServiceAvailabilityExceptionsDto,
   ReplaceServiceAvailabilityRulesDto,
@@ -704,8 +705,22 @@ export class ServicesService {
       id: service.id,
       name: service.name,
       description: service.description,
-      owner: service.ownerUser,
-      brand: service.brand,
+      owner: {
+        ...service.ownerUser,
+        ratingStats: service.ownerUser.serviceOwnerRatingStat ?? {
+          avgRating: 0,
+          reviewCount: 0,
+        },
+      },
+      brand: service.brand
+        ? {
+            ...service.brand,
+            ratingStats: service.brand.brandRatingStat ?? {
+              avgRating: 0,
+              reviewCount: 0,
+            },
+          }
+        : null,
       category: service.category,
       address: service.address,
       priceAmount: service.priceAmount,
@@ -717,6 +732,13 @@ export class ServicesService {
       approvalMode: service.approvalMode,
       freeCancellationDeadlineMinutes: service.freeCancellationDeadlineMinutes,
       isActive: service.isActive,
+      ratingStats: service.ratingStat ?? {
+        avgRating: 0,
+        reviewCount: 0,
+      },
+      visibilityLabels: serializeActiveVisibilityLabels(
+        service.visibilityAssignments,
+      ),
       photos: service.photos.map((photo) => ({
         id: photo.id,
         sortOrder: photo.sortOrder,
@@ -737,6 +759,12 @@ export class ServicesService {
         select: {
           id: true,
           fullName: true,
+          serviceOwnerRatingStat: {
+            select: {
+              avgRating: true,
+              reviewCount: true,
+            },
+          },
         },
       },
       brand: {
@@ -744,6 +772,12 @@ export class ServicesService {
           id: true,
           name: true,
           status: true,
+          brandRatingStat: {
+            select: {
+              avgRating: true,
+              reviewCount: true,
+            },
+          },
         },
       },
       category: {
@@ -754,6 +788,33 @@ export class ServicesService {
         },
       },
       address: true,
+      ratingStat: {
+        select: {
+          avgRating: true,
+          reviewCount: true,
+        },
+      },
+      visibilityAssignments: {
+        where: {
+          label: {
+            isActive: true,
+          },
+        },
+        include: {
+          label: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              targetType: true,
+              priority: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc' as const,
+        },
+      },
       photos: {
         include: {
           file: true,

@@ -25,6 +25,7 @@ import {
   UpdateBrandDto,
 } from './dto/create-brand.dto';
 import { ListBrandsDto } from './dto/list-brands.dto';
+import { serializeActiveVisibilityLabels } from '../common/utils/visibility.util';
 
 @Injectable()
 export class BrandsService {
@@ -43,20 +44,7 @@ export class BrandsService {
             }
           : {}),
       },
-      include: {
-        owner: {
-          select: {
-            id: true,
-            fullName: true,
-          },
-        },
-        addresses: {
-          where: {
-            isPrimary: true,
-          },
-          take: 1,
-        },
-      },
+      include: this.getBrandInclude(false),
       orderBy: {
         createdAt: 'desc',
       },
@@ -111,25 +99,7 @@ export class BrandsService {
         where: {
           id: createdBrand.id,
         },
-        include: {
-          owner: {
-            select: {
-              id: true,
-              fullName: true,
-            },
-          },
-          addresses: {
-            where: {
-              isPrimary: true,
-            },
-            take: 1,
-          },
-          memberships: {
-            where: {
-              status: BrandMembershipStatus.ACTIVE,
-            },
-          },
-        },
+        include: this.getBrandInclude(true),
       });
     });
 
@@ -143,33 +113,7 @@ export class BrandsService {
       where: {
         id: brandId,
       },
-      include: {
-        owner: {
-          select: {
-            id: true,
-            fullName: true,
-          },
-        },
-        addresses: {
-          where: {
-            isPrimary: true,
-          },
-          take: 1,
-        },
-        memberships: {
-          where: {
-            status: BrandMembershipStatus.ACTIVE,
-          },
-          include: {
-            user: {
-              select: {
-                id: true,
-                fullName: true,
-              },
-            },
-          },
-        },
-      },
+      include: this.getBrandInclude(true),
     });
 
     if (!brand) {
@@ -213,25 +157,7 @@ export class BrandsService {
         where: {
           id: brand.id,
         },
-        include: {
-          owner: {
-            select: {
-              id: true,
-              fullName: true,
-            },
-          },
-          addresses: {
-            where: {
-              isPrimary: true,
-            },
-            take: 1,
-          },
-          memberships: {
-            where: {
-              status: BrandMembershipStatus.ACTIVE,
-            },
-          },
-        },
+        include: this.getBrandInclude(true),
       });
     });
 
@@ -520,33 +446,7 @@ export class BrandsService {
         where: {
           id: brand.id,
         },
-        include: {
-          owner: {
-            select: {
-              id: true,
-              fullName: true,
-            },
-          },
-          addresses: {
-            where: {
-              isPrimary: true,
-            },
-            take: 1,
-          },
-          memberships: {
-            where: {
-              status: BrandMembershipStatus.ACTIVE,
-            },
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  fullName: true,
-                },
-              },
-            },
-          },
-        },
+        include: this.getBrandInclude(true),
       });
     });
 
@@ -751,6 +651,67 @@ export class BrandsService {
     }
   }
 
+  private getBrandInclude(includeMemberships: boolean) {
+    return {
+      owner: {
+        select: {
+          id: true,
+          fullName: true,
+        },
+      },
+      addresses: {
+        where: {
+          isPrimary: true,
+        },
+        take: 1,
+      },
+      brandRatingStat: {
+        select: {
+          avgRating: true,
+          reviewCount: true,
+        },
+      },
+      visibilityAssignments: {
+        where: {
+          label: {
+            isActive: true,
+          },
+        },
+        include: {
+          label: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              targetType: true,
+              priority: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc' as const,
+        },
+      },
+      ...(includeMemberships
+        ? {
+            memberships: {
+              where: {
+                status: BrandMembershipStatus.ACTIVE,
+              },
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    fullName: true,
+                  },
+                },
+              },
+            },
+          }
+        : {}),
+    } satisfies Prisma.BrandInclude;
+  }
+
   private serializeBrand(brand: {
     id: string;
     name: string;
@@ -775,6 +736,22 @@ export class BrandsService {
     memberships?: Array<{
       id: string;
     }>;
+    brandRatingStat?: {
+      avgRating: Prisma.Decimal;
+      reviewCount: number;
+    } | null;
+    visibilityAssignments: Array<{
+      id: string;
+      startsAt: Date;
+      endsAt: Date | null;
+      label: {
+        id: string;
+        name: string;
+        slug: string;
+        targetType: string;
+        priority: number;
+      };
+    }>;
     createdAt: Date;
     updatedAt: Date;
   }): Record<string, unknown> {
@@ -790,6 +767,13 @@ export class BrandsService {
       logoFileId: brand.logoFileId,
       primaryAddress,
       memberCount: brand.memberships?.length,
+      ratingStats: brand.brandRatingStat ?? {
+        avgRating: 0,
+        reviewCount: 0,
+      },
+      visibilityLabels: serializeActiveVisibilityLabels(
+        brand.visibilityAssignments,
+      ),
       createdAt: brand.createdAt,
       updatedAt: brand.updatedAt,
     };

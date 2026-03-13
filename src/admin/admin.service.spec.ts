@@ -1,0 +1,136 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+
+import {
+  ReservationObjectionStatus,
+  ReservationObjectionType,
+  ReservationStatus,
+} from '@prisma/client';
+
+import { AdminService } from './admin.service';
+
+describe('AdminService', () => {
+  it('accepts a reservation objection and recalculates penalty state', async () => {
+    const objectionFindUnique = jest.fn().mockResolvedValue({
+      id: 'objection-1',
+      reservationId: 'reservation-1',
+      userId: 'customer-1',
+      objectionType: ReservationObjectionType.NO_SHOW_DISPUTE,
+      reason: 'The provider never showed up.',
+      status: ReservationObjectionStatus.PENDING,
+      createdAt: new Date('2026-03-13T10:00:00.000Z'),
+      resolvedAt: null,
+      user: {
+        id: 'customer-1',
+        fullName: 'Demo Customer',
+        email: 'customer@reziphay.local',
+        phone: '+10000000002',
+      },
+      reservation: {
+        id: 'reservation-1',
+        status: ReservationStatus.NO_SHOW,
+        requestedStartAt: new Date('2026-03-13T09:00:00.000Z'),
+        service: {
+          id: 'service-1',
+          name: 'Classic Haircut',
+        },
+      },
+      resolvedByAdmin: null,
+    });
+    const objectionUpdate = jest.fn().mockResolvedValue({
+      id: 'objection-1',
+      reservationId: 'reservation-1',
+      userId: 'customer-1',
+      objectionType: ReservationObjectionType.NO_SHOW_DISPUTE,
+      reason: 'The provider never showed up.',
+      status: ReservationObjectionStatus.ACCEPTED,
+      createdAt: new Date('2026-03-13T10:00:00.000Z'),
+      resolvedAt: new Date('2026-03-13T11:00:00.000Z'),
+      user: {
+        id: 'customer-1',
+        fullName: 'Demo Customer',
+        email: 'customer@reziphay.local',
+        phone: '+10000000002',
+      },
+      reservation: {
+        id: 'reservation-1',
+        status: ReservationStatus.NO_SHOW,
+        requestedStartAt: new Date('2026-03-13T09:00:00.000Z'),
+        service: {
+          id: 'service-1',
+          name: 'Classic Haircut',
+        },
+      },
+      resolvedByAdmin: {
+        id: 'admin-1',
+        fullName: 'Reziphay Admin',
+      },
+    });
+    const penaltyPointUpdateMany = jest.fn().mockResolvedValue({
+      count: 1,
+    });
+    const adminAuditLogCreate = jest.fn().mockResolvedValue(undefined);
+    const recalculatePenaltyStateForUser = jest
+      .fn()
+      .mockResolvedValue(undefined);
+
+    const prisma = {
+      reservationObjection: {
+        findUnique: objectionFindUnique,
+      },
+      $transaction: jest.fn(
+        (callback: (tx: Record<string, unknown>) => unknown) =>
+          Promise.resolve(
+            callback({
+              reservationObjection: {
+                update: objectionUpdate,
+              },
+              penaltyPoint: {
+                updateMany: penaltyPointUpdateMany,
+              },
+              adminAuditLog: {
+                create: adminAuditLogCreate,
+              },
+            }),
+          ),
+      ),
+    } as any;
+
+    const service = new AdminService(prisma, {
+      recalculatePenaltyStateForUser,
+    } as any);
+
+    const result = await service.resolveReservationObjection(
+      'admin-1',
+      'objection-1',
+      {
+        status: ReservationObjectionStatus.ACCEPTED,
+        note: 'Penalty removed after review.',
+      },
+    );
+
+    expect(objectionUpdate).toHaveBeenCalled();
+    expect(penaltyPointUpdateMany).toHaveBeenCalledWith({
+      where: {
+        userId: 'customer-1',
+        reservationId: 'reservation-1',
+        reason: 'NO_SHOW',
+        isActive: true,
+      },
+      data: {
+        isActive: false,
+      },
+    });
+    expect(adminAuditLogCreate).toHaveBeenCalled();
+    expect(recalculatePenaltyStateForUser).toHaveBeenCalledWith('customer-1');
+    expect(result).toEqual(
+      expect.objectContaining({
+        deactivatedPenaltyPoints: 1,
+        objection: expect.objectContaining({
+          id: 'objection-1',
+          status: ReservationObjectionStatus.ACCEPTED,
+        }),
+      }),
+    );
+  });
+});

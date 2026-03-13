@@ -24,6 +24,7 @@ import {
 
 import { AppRole } from '../common/enums/app-role.enum';
 import type { AuthenticatedRequestUser } from '../common/types/authenticated-request-user.type';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { reservationConfig } from '../config';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -196,6 +197,7 @@ export class ReservationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reservationJobsService: ReservationJobsService,
+    private readonly notificationsService: NotificationsService,
     private readonly jwtService: JwtService,
     @Inject(reservationConfig.KEY)
     private readonly reservationConfiguration: ConfigType<
@@ -389,6 +391,25 @@ export class ReservationsService {
       }
     }
 
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationReceived({
+        reservationId: reservation.id,
+        ownerUserId: reservation.serviceOwnerUser.id,
+        serviceName: reservation.service.name,
+        customerName: reservation.customerUser.fullName,
+      }),
+    );
+
+    if (reservation.status === ReservationStatus.CONFIRMED) {
+      await this.runNotificationSafely(() =>
+        this.notificationsService.notifyReservationConfirmed({
+          reservationId: reservation.id,
+          customerUserId: reservation.customerUser.id,
+          serviceName: reservation.service.name,
+        }),
+      );
+    }
+
     return {
       reservation: this.serializeReservation(reservation),
     };
@@ -447,6 +468,14 @@ export class ReservationsService {
       });
     });
 
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationConfirmed({
+        reservationId: updatedReservation.id,
+        customerUserId: updatedReservation.customerUser.id,
+        serviceName: updatedReservation.service.name,
+      }),
+    );
+
     return {
       reservation: this.serializeReservation(updatedReservation),
     };
@@ -497,6 +526,14 @@ export class ReservationsService {
         include: reservationInclude,
       });
     });
+
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationRejected({
+        reservationId: updatedReservation.id,
+        customerUserId: updatedReservation.customerUser.id,
+        serviceName: updatedReservation.service.name,
+      }),
+    );
 
     return {
       reservation: this.serializeReservation(updatedReservation),
@@ -560,6 +597,14 @@ export class ReservationsService {
       });
     });
 
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationCancelled({
+        reservationId: updatedReservation.id,
+        recipientUserIds: [updatedReservation.serviceOwnerUser.id],
+        serviceName: updatedReservation.service.name,
+      }),
+    );
+
     return {
       reservation: this.serializeReservation(updatedReservation),
     };
@@ -611,6 +656,14 @@ export class ReservationsService {
         include: reservationInclude,
       });
     });
+
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationCancelled({
+        reservationId: updatedReservation.id,
+        recipientUserIds: [updatedReservation.customerUser.id],
+        serviceName: updatedReservation.service.name,
+      }),
+    );
 
     return {
       reservation: this.serializeReservation(updatedReservation),
@@ -728,6 +781,18 @@ export class ReservationsService {
       });
     });
 
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationChangeRequested({
+        reservationId: updatedReservation.id,
+        recipientUserIds: [
+          actorParty === 'CUSTOMER'
+            ? updatedReservation.serviceOwnerUser.id
+            : updatedReservation.customerUser.id,
+        ],
+        serviceName: updatedReservation.service.name,
+      }),
+    );
+
     return {
       reservation: this.serializeReservation(updatedReservation),
     };
@@ -815,6 +880,14 @@ export class ReservationsService {
       });
     });
 
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationConfirmed({
+        reservationId: updatedReservation.id,
+        customerUserId: updatedReservation.customerUser.id,
+        serviceName: updatedReservation.service.name,
+      }),
+    );
+
     return {
       reservation: this.serializeReservation(updatedReservation),
     };
@@ -885,6 +958,17 @@ export class ReservationsService {
       });
     });
 
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationCompleted({
+        reservationId: updatedReservation.id,
+        recipientUserIds: [
+          updatedReservation.customerUser.id,
+          updatedReservation.serviceOwnerUser.id,
+        ],
+        serviceName: updatedReservation.service.name,
+      }),
+    );
+
     return {
       reservation: this.serializeReservation(updatedReservation),
     };
@@ -943,6 +1027,17 @@ export class ReservationsService {
         include: reservationInclude,
       });
     });
+
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationCompleted({
+        reservationId: updatedReservation.id,
+        recipientUserIds: [
+          updatedReservation.customerUser.id,
+          updatedReservation.serviceOwnerUser.id,
+        ],
+        serviceName: updatedReservation.service.name,
+      }),
+    );
 
     return {
       reservation: this.serializeReservation(updatedReservation),
@@ -1023,7 +1118,7 @@ export class ReservationsService {
   }
 
   async expirePendingReservation(reservationId: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+    const outcome = await this.prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findUnique({
         where: {
           id: reservationId,
@@ -1031,18 +1126,18 @@ export class ReservationsService {
       });
 
       if (!reservation) {
-        return;
+        return null;
       }
 
       if (!EXPIRABLE_RESERVATION_STATUSES.includes(reservation.status)) {
-        return;
+        return null;
       }
 
       if (
         reservation.approvalExpiresAt &&
         reservation.approvalExpiresAt.getTime() > Date.now()
       ) {
-        return;
+        return null;
       }
 
       await tx.reservation.update({
@@ -1065,7 +1160,36 @@ export class ReservationsService {
         reason:
           'Reservation request expired after the approval window elapsed.',
       });
+
+      return {
+        reservationId: reservation.id,
+        customerUserId: reservation.customerUserId,
+        ownerUserId: reservation.serviceOwnerUserId,
+        serviceName:
+          (
+            await tx.service.findUnique({
+              where: {
+                id: reservation.serviceId,
+              },
+              select: {
+                name: true,
+              },
+            })
+          )?.name ?? 'Reservation',
+      };
     });
+
+    if (!outcome) {
+      return;
+    }
+
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationExpired({
+        reservationId: outcome.reservationId,
+        recipientUserIds: [outcome.customerUserId, outcome.ownerUserId],
+        serviceName: outcome.serviceName,
+      }),
+    );
   }
 
   private async getReservableServiceOrThrow(
@@ -1564,5 +1688,18 @@ export class ReservationsService {
       })),
       completionQrPayload,
     };
+  }
+
+  private async runNotificationSafely(
+    operation: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await operation();
+    } catch (error) {
+      this.logger.error(
+        'Notification dispatch failed during reservations flow.',
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
   }
 }
