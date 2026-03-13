@@ -74,6 +74,38 @@ enum DayOfWeek {
   SUNDAY
 }
 
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  CANCELLED_BY_CUSTOMER
+  CANCELLED_BY_OWNER
+  CHANGE_REQUESTED_BY_CUSTOMER
+  CHANGE_REQUESTED_BY_OWNER
+  COMPLETED
+  NO_SHOW
+  EXPIRED
+}
+
+enum ReservationActorType {
+  SYSTEM
+  CUSTOMER
+  OWNER
+  ADMIN
+}
+
+enum ReservationChangeRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+enum ReservationCompletionMethod {
+  QR
+  MANUAL
+}
+
 model User {
   id              String     @id @default(uuid()) @db.Uuid
   fullName        String     @map("full_name")
@@ -88,16 +120,23 @@ model User {
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
 
-  roles           UserRole[]
-  authSessions    AuthSession[]
-  emailMagicLinks EmailMagicLink[]
-  ownedBrands     Brand[]              @relation("BrandOwner")
-  brandMemberships BrandMembership[]
-  brandJoinRequests BrandJoinRequest[] @relation("BrandJoinRequestRequester")
-  reviewedBrandJoinRequests BrandJoinRequest[] @relation("BrandJoinRequestReviewer")
-  serviceAddresses ServiceAddress[]    @relation("ServiceAddressOwner")
-  services         Service[]           @relation("ServiceOwner")
-  uploadedFiles    FileObject[]        @relation("UploadedByUser")
+  roles                          UserRole[]
+  authSessions                   AuthSession[]
+  emailMagicLinks                EmailMagicLink[]
+  ownedBrands                    Brand[]                       @relation("BrandOwner")
+  brandMemberships               BrandMembership[]
+  brandJoinRequests              BrandJoinRequest[]            @relation("BrandJoinRequestRequester")
+  reviewedBrandJoinRequests      BrandJoinRequest[]            @relation("BrandJoinRequestReviewer")
+  serviceAddresses               ServiceAddress[]              @relation("ServiceAddressOwner")
+  services                       Service[]                     @relation("ServiceOwner")
+  customerReservations           Reservation[]                 @relation("ReservationCustomer")
+  serviceOwnerReservations       Reservation[]                 @relation("ReservationServiceOwner")
+  reservationStatusHistory       ReservationStatusHistory[]    @relation("ReservationStatusActor")
+  requestedReservationChanges    ReservationChangeRequest[]    @relation("ReservationChangeRequestedBy")
+  reviewedReservationChanges     ReservationChangeRequest[]    @relation("ReservationChangeReviewedBy")
+  reservationCompletionActions   ReservationCompletionRecord[] @relation("ReservationCompletionActor")
+  verifiedReservationCompletions ReservationCompletionRecord[] @relation("ReservationCompletionVerifiedCustomer")
+  uploadedFiles                  FileObject[]                  @relation("UploadedByUser")
 
   @@index([status], map: "users_status_idx")
   @@map("users")
@@ -105,7 +144,7 @@ model User {
 
 model UserRole {
   id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid @map("user_id")
+  userId    String   @map("user_id") @db.Uuid
   role      AppRole
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -118,7 +157,7 @@ model UserRole {
 
 model AuthSession {
   id               String    @id @default(uuid()) @db.Uuid
-  userId           String    @db.Uuid @map("user_id")
+  userId           String    @map("user_id") @db.Uuid
   refreshTokenHash String    @map("refresh_token_hash")
   deviceInfo       String?   @map("device_info")
   ip               String?
@@ -155,7 +194,7 @@ model OtpCode {
 
 model EmailMagicLink {
   id         String           @id @default(uuid()) @db.Uuid
-  userId     String?          @db.Uuid @map("user_id")
+  userId     String?          @map("user_id") @db.Uuid
   email      String
   tokenHash  String           @map("token_hash")
   purpose    MagicLinkPurpose
@@ -172,21 +211,22 @@ model EmailMagicLink {
 
 model Brand {
   id          String      @id @default(uuid()) @db.Uuid
-  ownerUserId String      @db.Uuid @map("owner_user_id")
-  logoFileId  String?     @db.Uuid @map("logo_file_id")
+  ownerUserId String      @map("owner_user_id") @db.Uuid
+  logoFileId  String?     @map("logo_file_id") @db.Uuid
   name        String
   description String?
   status      BrandStatus @default(ACTIVE)
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  owner        User               @relation("BrandOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  logoFile     FileObject?        @relation("BrandLogoFile", fields: [logoFileId], references: [id], onDelete: SetNull)
-  memberships  BrandMembership[]
-  joinRequests BrandJoinRequest[]
-  addresses    BrandAddress[]
+  owner            User               @relation("BrandOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  logoFile         FileObject?        @relation("BrandLogoFile", fields: [logoFileId], references: [id], onDelete: SetNull)
+  memberships      BrandMembership[]
+  joinRequests     BrandJoinRequest[]
+  addresses        BrandAddress[]
   serviceAddresses ServiceAddress[]
-  services     Service[]
+  services         Service[]
+  reservations     Reservation[]
 
   @@index([ownerUserId], map: "brands_owner_user_id_idx")
   @@index([status], map: "brands_status_idx")
@@ -195,7 +235,7 @@ model Brand {
 
 model BrandAddress {
   id          String   @id @default(uuid()) @db.Uuid
-  brandId     String   @db.Uuid @map("brand_id")
+  brandId     String   @map("brand_id") @db.Uuid
   label       String?
   fullAddress String   @map("full_address")
   country     String
@@ -215,8 +255,8 @@ model BrandAddress {
 
 model BrandMembership {
   id             String                @id @default(uuid()) @db.Uuid
-  brandId        String                @db.Uuid @map("brand_id")
-  userId         String                @db.Uuid @map("user_id")
+  brandId        String                @map("brand_id") @db.Uuid
+  userId         String                @map("user_id") @db.Uuid
   membershipRole BrandMembershipRole   @default(MEMBER) @map("membership_role")
   status         BrandMembershipStatus @default(ACTIVE)
   createdAt      DateTime              @default(now()) @map("created_at")
@@ -232,18 +272,18 @@ model BrandMembership {
 }
 
 model BrandJoinRequest {
-  id              String                 @id @default(uuid()) @db.Uuid
-  brandId         String                 @db.Uuid @map("brand_id")
-  requesterUserId String                 @db.Uuid @map("requester_user_id")
-  message         String?
-  status          BrandJoinRequestStatus @default(PENDING)
-  reviewedByUserId String?               @db.Uuid @map("reviewed_by_user_id")
-  reviewedAt      DateTime?              @map("reviewed_at")
-  createdAt       DateTime               @default(now()) @map("created_at")
-  updatedAt       DateTime               @updatedAt @map("updated_at")
+  id               String                 @id @default(uuid()) @db.Uuid
+  brandId          String                 @map("brand_id") @db.Uuid
+  requesterUserId  String                 @map("requester_user_id") @db.Uuid
+  message          String?
+  status           BrandJoinRequestStatus @default(PENDING)
+  reviewedByUserId String?                @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt       DateTime?              @map("reviewed_at")
+  createdAt        DateTime               @default(now()) @map("created_at")
+  updatedAt        DateTime               @updatedAt @map("updated_at")
 
-  brand        Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  requesterUser User @relation("BrandJoinRequestRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
+  brand          Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  requesterUser  User  @relation("BrandJoinRequestRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
   reviewedByUser User? @relation("BrandJoinRequestReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
 
   @@index([brandId, status], map: "brand_join_requests_brand_id_status_idx")
@@ -252,13 +292,13 @@ model BrandJoinRequest {
 }
 
 model ServiceCategory {
-  id        String           @id @default(uuid()) @db.Uuid
+  id        String   @id @default(uuid()) @db.Uuid
   name      String
-  slug      String           @unique
-  parentId  String?          @db.Uuid @map("parent_id")
-  isActive  Boolean          @default(true) @map("is_active")
-  createdAt DateTime         @default(now()) @map("created_at")
-  updatedAt DateTime         @updatedAt @map("updated_at")
+  slug      String   @unique
+  parentId  String?  @map("parent_id") @db.Uuid
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   parent   ServiceCategory?  @relation("ServiceCategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children ServiceCategory[] @relation("ServiceCategoryHierarchy")
@@ -271,8 +311,8 @@ model ServiceCategory {
 
 model ServiceAddress {
   id          String   @id @default(uuid()) @db.Uuid
-  brandId     String?  @db.Uuid @map("brand_id")
-  ownerUserId String?  @db.Uuid @map("owner_user_id")
+  brandId     String?  @map("brand_id") @db.Uuid
+  ownerUserId String?  @map("owner_user_id") @db.Uuid
   label       String?
   fullAddress String   @map("full_address")
   country     String
@@ -293,32 +333,33 @@ model ServiceAddress {
 }
 
 model Service {
-  id                               String       @id @default(uuid()) @db.Uuid
-  ownerUserId                      String       @db.Uuid @map("owner_user_id")
-  brandId                          String?      @db.Uuid @map("brand_id")
-  categoryId                       String?      @db.Uuid @map("category_id")
-  addressId                        String?      @db.Uuid @map("address_id")
-  name                             String
-  description                      String?
-  priceAmount                      Decimal?     @db.Decimal(12, 2) @map("price_amount")
-  priceCurrency                    String?      @db.VarChar(3) @map("price_currency")
-  waitingTimeMinutes               Int          @map("waiting_time_minutes")
-  minAdvanceMinutes                Int?         @map("min_advance_minutes")
-  maxAdvanceMinutes                Int?         @map("max_advance_minutes")
-  serviceType                      ServiceType  @map("service_type")
-  approvalMode                     ApprovalMode @map("approval_mode")
-  freeCancellationDeadlineMinutes  Int?         @map("free_cancellation_deadline_minutes")
-  isActive                         Boolean      @default(true) @map("is_active")
-  createdAt                        DateTime     @default(now()) @map("created_at")
-  updatedAt                        DateTime     @updatedAt @map("updated_at")
+  id                              String       @id @default(uuid()) @db.Uuid
+  ownerUserId                     String       @map("owner_user_id") @db.Uuid
+  brandId                         String?      @map("brand_id") @db.Uuid
+  categoryId                      String?      @map("category_id") @db.Uuid
+  addressId                       String?      @map("address_id") @db.Uuid
+  name                            String
+  description                     String?
+  priceAmount                     Decimal?     @map("price_amount") @db.Decimal(12, 2)
+  priceCurrency                   String?      @map("price_currency") @db.VarChar(3)
+  waitingTimeMinutes              Int          @map("waiting_time_minutes")
+  minAdvanceMinutes               Int?         @map("min_advance_minutes")
+  maxAdvanceMinutes               Int?         @map("max_advance_minutes")
+  serviceType                     ServiceType  @map("service_type")
+  approvalMode                    ApprovalMode @map("approval_mode")
+  freeCancellationDeadlineMinutes Int?         @map("free_cancellation_deadline_minutes")
+  isActive                        Boolean      @default(true) @map("is_active")
+  createdAt                       DateTime     @default(now()) @map("created_at")
+  updatedAt                       DateTime     @updatedAt @map("updated_at")
 
-  ownerUser             User                         @relation("ServiceOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  brand                 Brand?                       @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  category              ServiceCategory?             @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  address               ServiceAddress?              @relation(fields: [addressId], references: [id], onDelete: SetNull)
-  photos                ServicePhoto[]
-  availabilityRules     ServiceAvailabilityRule[]
+  ownerUser              User                           @relation("ServiceOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  brand                  Brand?                         @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  category               ServiceCategory?               @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  address                ServiceAddress?                @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  photos                 ServicePhoto[]
+  availabilityRules      ServiceAvailabilityRule[]
   availabilityExceptions ServiceAvailabilityException[]
+  reservations           Reservation[]
 
   @@index([ownerUserId, isActive], map: "services_owner_user_id_is_active_idx")
   @@index([brandId], map: "services_brand_id_idx")
@@ -335,12 +376,12 @@ model FileObject {
   originalFilename String?  @map("original_filename")
   mimeType         String   @map("mime_type")
   sizeBytes        Int      @map("size_bytes")
-  uploadedByUserId String?  @db.Uuid @map("uploaded_by_user_id")
+  uploadedByUserId String?  @map("uploaded_by_user_id") @db.Uuid
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  uploadedByUser User?        @relation("UploadedByUser", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
-  brandsAsLogo   Brand[]      @relation("BrandLogoFile")
+  uploadedByUser User?          @relation("UploadedByUser", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  brandsAsLogo   Brand[]        @relation("BrandLogoFile")
   servicePhotos  ServicePhoto[]
 
   @@index([uploadedByUserId], map: "files_uploaded_by_user_id_idx")
@@ -349,25 +390,25 @@ model FileObject {
 
 model ServicePhoto {
   id        String   @id @default(uuid()) @db.Uuid
-  serviceId String   @db.Uuid @map("service_id")
-  fileId    String   @db.Uuid @map("file_id")
+  serviceId String   @map("service_id") @db.Uuid
+  fileId    String   @map("file_id") @db.Uuid
   sortOrder Int      @default(0) @map("sort_order")
   createdAt DateTime @default(now()) @map("created_at")
 
   service Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   file    FileObject @relation(fields: [fileId], references: [id], onDelete: Cascade)
 
-  @@index([serviceId, sortOrder], map: "service_photos_service_id_sort_order_idx")
   @@unique([serviceId, fileId], map: "service_photos_service_id_file_id_key")
+  @@index([serviceId, sortOrder], map: "service_photos_service_id_sort_order_idx")
   @@map("service_photos")
 }
 
 model ServiceAvailabilityRule {
   id        String    @id @default(uuid()) @db.Uuid
-  serviceId String    @db.Uuid @map("service_id")
+  serviceId String    @map("service_id") @db.Uuid
   dayOfWeek DayOfWeek @map("day_of_week")
-  startTime String    @db.VarChar(5) @map("start_time")
-  endTime   String    @db.VarChar(5) @map("end_time")
+  startTime String    @map("start_time") @db.VarChar(5)
+  endTime   String    @map("end_time") @db.VarChar(5)
   isActive  Boolean   @default(true) @map("is_active")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -380,10 +421,10 @@ model ServiceAvailabilityRule {
 
 model ServiceAvailabilityException {
   id             String   @id @default(uuid()) @db.Uuid
-  serviceId      String   @db.Uuid @map("service_id")
+  serviceId      String   @map("service_id") @db.Uuid
   date           DateTime @db.Date
-  startTime      String?  @db.VarChar(5) @map("start_time")
-  endTime        String?  @db.VarChar(5) @map("end_time")
+  startTime      String?  @map("start_time") @db.VarChar(5)
+  endTime        String?  @map("end_time") @db.VarChar(5)
   isClosedAllDay Boolean  @default(false) @map("is_closed_all_day")
   note           String?
   createdAt      DateTime @default(now()) @map("created_at")
@@ -393,4 +434,97 @@ model ServiceAvailabilityException {
 
   @@index([serviceId, date], map: "service_availability_exceptions_service_id_date_idx")
   @@map("service_availability_exceptions")
+}
+
+model Reservation {
+  id                                     String            @id @default(uuid()) @db.Uuid
+  serviceId                              String            @map("service_id") @db.Uuid
+  customerUserId                         String            @map("customer_user_id") @db.Uuid
+  serviceOwnerUserId                     String            @map("service_owner_user_id") @db.Uuid
+  brandId                                String?           @map("brand_id") @db.Uuid
+  requestedStartAt                       DateTime          @map("requested_start_at")
+  requestedEndAt                         DateTime?         @map("requested_end_at")
+  status                                 ReservationStatus
+  approvalExpiresAt                      DateTime?         @map("approval_expires_at")
+  customerNote                           String?           @map("customer_note")
+  rejectionReason                        String?           @map("rejection_reason")
+  cancellationReason                     String?           @map("cancellation_reason")
+  freeCancellationEligibleAtCancellation Boolean?          @map("free_cancellation_eligible_at_cancellation")
+  cancelledAt                            DateTime?         @map("cancelled_at")
+  completedAt                            DateTime?         @map("completed_at")
+  createdAt                              DateTime          @default(now()) @map("created_at")
+  updatedAt                              DateTime          @updatedAt @map("updated_at")
+
+  service           Service                       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  customerUser      User                          @relation("ReservationCustomer", fields: [customerUserId], references: [id], onDelete: Cascade)
+  serviceOwnerUser  User                          @relation("ReservationServiceOwner", fields: [serviceOwnerUserId], references: [id], onDelete: Cascade)
+  brand             Brand?                        @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  statusHistory     ReservationStatusHistory[]
+  changeRequests    ReservationChangeRequest[]
+  completionRecords ReservationCompletionRecord[]
+
+  @@index([customerUserId, status, createdAt], map: "reservations_customer_user_id_status_created_at_idx")
+  @@index([serviceOwnerUserId, status, createdAt], map: "reservations_owner_user_id_status_created_at_idx")
+  @@index([serviceId, status, requestedStartAt], map: "reservations_service_id_status_start_at_idx")
+  @@index([brandId], map: "reservations_brand_id_idx")
+  @@map("reservations")
+}
+
+model ReservationStatusHistory {
+  id            String               @id @default(uuid()) @db.Uuid
+  reservationId String               @map("reservation_id") @db.Uuid
+  fromStatus    ReservationStatus?   @map("from_status")
+  toStatus      ReservationStatus    @map("to_status")
+  reason        String?
+  actorType     ReservationActorType @map("actor_type")
+  actorUserId   String?              @map("actor_user_id") @db.Uuid
+  createdAt     DateTime             @default(now()) @map("created_at")
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  actorUser   User?       @relation("ReservationStatusActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([reservationId, createdAt], map: "reservation_status_history_reservation_id_created_at_idx")
+  @@index([actorUserId], map: "reservation_status_history_actor_user_id_idx")
+  @@map("reservation_status_history")
+}
+
+model ReservationChangeRequest {
+  id                String                         @id @default(uuid()) @db.Uuid
+  reservationId     String                         @map("reservation_id") @db.Uuid
+  requestedByUserId String                         @map("requested_by_user_id") @db.Uuid
+  requestedStartAt  DateTime                       @map("requested_start_at")
+  requestedEndAt    DateTime?                      @map("requested_end_at")
+  reason            String
+  status            ReservationChangeRequestStatus @default(PENDING)
+  previousStatus    ReservationStatus              @map("previous_status")
+  reviewedByUserId  String?                        @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt        DateTime?                      @map("reviewed_at")
+  createdAt         DateTime                       @default(now()) @map("created_at")
+  updatedAt         DateTime                       @updatedAt @map("updated_at")
+
+  reservation     Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  requestedByUser User        @relation("ReservationChangeRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Cascade)
+  reviewedByUser  User?       @relation("ReservationChangeReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([reservationId, status], map: "reservation_change_requests_reservation_id_status_idx")
+  @@index([requestedByUserId, status], map: "reservation_change_requests_requested_by_status_idx")
+  @@map("reservation_change_requests")
+}
+
+model ReservationCompletionRecord {
+  id                     String                      @id @default(uuid()) @db.Uuid
+  reservationId          String                      @map("reservation_id") @db.Uuid
+  method                 ReservationCompletionMethod
+  completedByUserId      String                      @map("completed_by_user_id") @db.Uuid
+  customerVerifiedUserId String?                     @map("customer_verified_user_id") @db.Uuid
+  qrPayloadSnapshot      String?                     @map("qr_payload_snapshot")
+  createdAt              DateTime                    @default(now()) @map("created_at")
+
+  reservation          Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  completedByUser      User        @relation("ReservationCompletionActor", fields: [completedByUserId], references: [id], onDelete: Cascade)
+  customerVerifiedUser User?       @relation("ReservationCompletionVerifiedCustomer", fields: [customerVerifiedUserId], references: [id], onDelete: SetNull)
+
+  @@index([reservationId, createdAt], map: "reservation_completion_records_reservation_id_created_at_idx")
+  @@index([completedByUserId], map: "reservation_completion_records_completed_by_idx")
+  @@map("reservation_completion_records")
 }

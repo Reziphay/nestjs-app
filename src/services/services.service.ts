@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AppRole, BrandStatus, Prisma } from '@prisma/client';
+import {
+  AppRole,
+  BrandStatus,
+  Prisma,
+  ReservationStatus,
+} from '@prisma/client';
 
 import { BrandsService } from '../brands/brands.service';
 import { isValidTimeRange } from '../common/utils/time.util';
@@ -249,6 +254,25 @@ export class ServicesService {
     serviceId: string,
   ): Promise<Record<string, unknown>> {
     const service = await this.getOwnedServiceOrThrow(userId, serviceId);
+    const activeReservationCount = await this.prisma.reservation.count({
+      where: {
+        serviceId: service.id,
+        status: {
+          in: [
+            ReservationStatus.PENDING,
+            ReservationStatus.CONFIRMED,
+            ReservationStatus.CHANGE_REQUESTED_BY_CUSTOMER,
+            ReservationStatus.CHANGE_REQUESTED_BY_OWNER,
+          ],
+        },
+      },
+    });
+
+    if (activeReservationCount > 0) {
+      throw new BadRequestException(
+        'Services with active reservations cannot be archived.',
+      );
+    }
 
     const archivedService = await this.prisma.service.update({
       where: {

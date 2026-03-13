@@ -171,4 +171,59 @@ describe('ServicesService', () => {
       }),
     );
   });
+
+  it('does not archive a service when active reservations exist', async () => {
+    const serviceFindUnique = jest.fn().mockResolvedValue({
+      id: 'service-1',
+      ownerUserId: 'uso-1',
+      brandId: null,
+      categoryId: null,
+      addressId: null,
+      name: 'Classic Haircut',
+      description: null,
+      priceAmount: null,
+      priceCurrency: null,
+      waitingTimeMinutes: 15,
+      minAdvanceMinutes: null,
+      maxAdvanceMinutes: null,
+      serviceType: ServiceType.SOLO,
+      approvalMode: ApprovalMode.MANUAL,
+      freeCancellationDeadlineMinutes: null,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const reservationCount = jest.fn().mockResolvedValue(1);
+
+    const prisma = {
+      service: {
+        findUnique: serviceFindUnique,
+      },
+      reservation: {
+        count: reservationCount,
+      },
+    } as any;
+
+    const brandsService = {} as any;
+    const storageService = {} as any;
+
+    const service = new ServicesService(prisma, brandsService, storageService);
+
+    await expect(service.archiveService('uso-1', 'service-1')).rejects.toThrow(
+      'Services with active reservations cannot be archived.',
+    );
+    expect(reservationCount).toHaveBeenCalledWith({
+      where: {
+        serviceId: 'service-1',
+        status: {
+          in: [
+            'PENDING',
+            'CONFIRMED',
+            'CHANGE_REQUESTED_BY_CUSTOMER',
+            'CHANGE_REQUESTED_BY_OWNER',
+          ],
+        },
+      },
+    });
+  });
 });

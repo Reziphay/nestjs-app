@@ -68,6 +68,20 @@ class EnvironmentVariables {
   @IsNotEmpty()
   AUTH_HASH_SECRET!: string;
 
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  RESERVATION_APPROVAL_TTL_MINUTES!: number;
+
+  @IsString()
+  @IsNotEmpty()
+  RESERVATION_QR_SECRET!: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  RESERVATION_QR_TTL_MINUTES!: number;
+
   @IsUrl({
     require_tld: false,
     require_protocol: true,
