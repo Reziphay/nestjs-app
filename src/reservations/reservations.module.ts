@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 
+import { DiscoveryStatsModule } from '../discovery-stats/discovery-stats.module';
 import { NotificationPreferencesModule } from '../notification-preferences/notification-preferences.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { RESERVATION_JOBS_QUEUE } from './reservations.constants';
@@ -16,6 +17,7 @@ import { ReservationsService } from './reservations.service';
       name: RESERVATION_JOBS_QUEUE,
     }),
     JwtModule.register({}),
+    DiscoveryStatsModule,
     forwardRef(() => NotificationPreferencesModule),
     NotificationsModule,
   ],

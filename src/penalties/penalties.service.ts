@@ -19,6 +19,7 @@ import {
   UserStatus,
 } from '@prisma/client';
 
+import { ReservationPopularityStatsService } from '../discovery-stats/reservation-popularity-stats.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReservationObjectionDto } from './dto/create-reservation-objection.dto';
@@ -33,6 +34,9 @@ import {
 
 const noShowReservationSelect = {
   id: true,
+  serviceId: true,
+  serviceOwnerUserId: true,
+  brandId: true,
   status: true,
   delayStatus: true,
   requestedStartAt: true,
@@ -64,6 +68,7 @@ export class PenaltiesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly reservationPopularityStatsService: ReservationPopularityStatsService,
   ) {}
 
   async listMyPenalties(userId: string): Promise<Record<string, unknown>> {
@@ -288,6 +293,16 @@ export class PenaltiesService {
             reason: 'Reservation automatically marked as no-show.',
           },
         });
+        await this.reservationPopularityStatsService.syncReservationTransition(
+          tx,
+          {
+            serviceId: currentReservation.serviceId,
+            serviceOwnerUserId: currentReservation.serviceOwnerUserId,
+            brandId: currentReservation.brandId,
+            fromStatus: ReservationStatus.CONFIRMED,
+            toStatus: ReservationStatus.NO_SHOW,
+          },
+        );
 
         await tx.penaltyPoint.upsert({
           where: {

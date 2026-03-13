@@ -21,10 +21,13 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { AppRole } from '../common/enums/app-role.enum';
 import { AccessTokenGuard } from '../common/guards/access-token.guard';
 import type { AuthenticatedRequestUser } from '../common/types/authenticated-request-user.type';
+import { SearchDiscoveryDto } from '../search/dto/search-discovery.dto';
+import { SearchService } from '../search/search.service';
 import { CreateServiceDto, UpdateServiceDto } from './dto/create-service.dto';
 import { ListServicesDto } from './dto/list-services.dto';
 import {
   ReplaceServiceAvailabilityExceptionsDto,
+  ReplaceServiceManualBlocksDto,
   ReplaceServiceAvailabilityRulesDto,
 } from './dto/service-availability.dto';
 import { ServicesService } from './services.service';
@@ -32,7 +35,10 @@ import { ServicesService } from './services.service';
 @ApiTags('Services')
 @Controller('services')
 export class ServicesController {
-  constructor(private readonly servicesService: ServicesService) {}
+  constructor(
+    private readonly servicesService: ServicesService,
+    private readonly searchService: SearchService,
+  ) {}
 
   @Public()
   @Get()
@@ -40,6 +46,14 @@ export class ServicesController {
     @Query() query: ListServicesDto,
   ): Promise<Record<string, unknown>> {
     return this.servicesService.listServices(query);
+  }
+
+  @Public()
+  @Get('nearby')
+  listNearbyServices(
+    @Query() query: SearchDiscoveryDto,
+  ): Promise<Record<string, unknown>> {
+    return this.searchService.listNearbyServices(query);
   }
 
   @ApiBearerAuth()
@@ -96,6 +110,18 @@ export class ServicesController {
       serviceId,
       dto,
     );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AccessTokenGuard)
+  @Roles(AppRole.USO)
+  @Put(':id/manual-blocks')
+  replaceManualBlocks(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Param('id') serviceId: string,
+    @Body() dto: ReplaceServiceManualBlocksDto,
+  ): Promise<Record<string, unknown>> {
+    return this.servicesService.replaceManualBlocks(user.sub, serviceId, dto);
   }
 
   @ApiBearerAuth()

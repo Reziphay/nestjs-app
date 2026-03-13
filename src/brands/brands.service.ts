@@ -15,6 +15,8 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { SearchDocumentsService } from '../search-documents/search-documents.service';
+import { StorageService } from '../storage/storage.service';
 import {
   CreateBrandJoinRequestDto,
   TransferBrandOwnershipDto,
@@ -29,7 +31,11 @@ import { serializeActiveVisibilityLabels } from '../common/utils/visibility.util
 
 @Injectable()
 export class BrandsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storageService: StorageService,
+    private readonly searchDocumentsService: SearchDocumentsService,
+  ) {}
 
   async listBrands(query: ListBrandsDto): Promise<Record<string, unknown>> {
     const brands = await this.prisma.brand.findMany({
@@ -95,6 +101,8 @@ export class BrandsService {
         },
       });
 
+      await this.searchDocumentsService.syncBrandDocument(createdBrand.id, tx);
+
       return tx.brand.findUniqueOrThrow({
         where: {
           id: createdBrand.id,
@@ -153,6 +161,8 @@ export class BrandsService {
         await this.upsertPrimaryAddress(tx, brand.id, dto.primaryAddress);
       }
 
+      await this.searchDocumentsService.syncBrandDocument(brand.id, tx);
+
       return tx.brand.findUniqueOrThrow({
         where: {
           id: brand.id,
@@ -160,6 +170,35 @@ export class BrandsService {
         include: this.getBrandInclude(true),
       });
     });
+
+    return {
+      brand: this.serializeBrand(updatedBrand),
+    };
+  }
+
+  async uploadLogo(
+    userId: string,
+    brandId: string,
+    file: Express.Multer.File | undefined,
+  ): Promise<Record<string, unknown>> {
+    const brand = await this.getOwnedBrandOrThrow(userId, brandId);
+    const uploadedFile = await this.storageService.uploadFile(
+      file,
+      userId,
+      'brand-logos',
+    );
+
+    const updatedBrand = await this.prisma.brand.update({
+      where: {
+        id: brand.id,
+      },
+      data: {
+        logoFileId: uploadedFile.id,
+      },
+      include: this.getBrandInclude(true),
+    });
+
+    await this.searchDocumentsService.syncBrandDocument(brand.id);
 
     return {
       brand: this.serializeBrand(updatedBrand),
@@ -442,6 +481,9 @@ export class BrandsService {
         },
       });
 
+      await this.searchDocumentsService.syncBrandDocument(brand.id, tx);
+      await this.searchDocumentsService.syncProviderDocument(userId, tx);
+
       return tx.brand.findUniqueOrThrow({
         where: {
           id: brand.id,
@@ -659,6 +701,7 @@ export class BrandsService {
           fullName: true,
         },
       },
+      logoFile: true,
       addresses: {
         where: {
           isPrimary: true,
@@ -718,6 +761,16 @@ export class BrandsService {
     description: string | null;
     status: BrandStatus;
     logoFileId: string | null;
+    logoFile?: {
+      id: string;
+      bucket: string;
+      objectKey: string;
+      originalFilename: string | null;
+      mimeType: string;
+      sizeBytes: number;
+      uploadedByUserId: string | null;
+      createdAt: Date;
+    } | null;
     owner: {
       id: string;
       fullName: string;
@@ -765,6 +818,7 @@ export class BrandsService {
       status: brand.status,
       owner: brand.owner,
       logoFileId: brand.logoFileId,
+      logoFile: brand.logoFile,
       primaryAddress,
       memberCount: brand.memberships?.length,
       ratingStats: brand.brandRatingStat ?? {

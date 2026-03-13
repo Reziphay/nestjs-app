@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 
@@ -100,10 +101,45 @@ export class ReplaceServiceAvailabilityExceptionsDto {
   exceptions!: ServiceAvailabilityExceptionDto[];
 }
 
+export class ServiceManualBlockDto {
+  @ApiProperty({
+    example: '2026-04-05T10:00:00.000Z',
+  })
+  @IsDateString()
+  startsAt!: string;
+
+  @ApiProperty({
+    example: '2026-04-05T11:30:00.000Z',
+  })
+  @IsDateString()
+  endsAt!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class ReplaceServiceManualBlocksDto {
+  @ApiProperty({
+    type: [ServiceManualBlockDto],
+  })
+  @IsArray()
+  @ArrayMaxSize(256)
+  @ValidateNested({ each: true })
+  @Type(() => ServiceManualBlockDto)
+  blocks!: ServiceManualBlockDto[];
+}
+
 export class PartialServiceAvailabilityRuleDto extends PartialType(
   ServiceAvailabilityRuleDto,
 ) {}
 
 export class PartialServiceAvailabilityExceptionDto extends PartialType(
   ServiceAvailabilityExceptionDto,
+) {}
+
+export class PartialServiceManualBlockDto extends PartialType(
+  ServiceManualBlockDto,
 ) {}

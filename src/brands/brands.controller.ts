@@ -6,9 +6,12 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -62,6 +65,20 @@ export class BrandsController {
     @Body() dto: UpdateBrandDto,
   ): Promise<Record<string, unknown>> {
     return this.brandsService.updateBrand(user.sub, brandId, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AccessTokenGuard)
+  @Roles(AppRole.USO)
+  @Post(':id/logo')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadLogo(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Param('id') brandId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<Record<string, unknown>> {
+    return this.brandsService.uploadLogo(user.sub, brandId, file);
   }
 
   @ApiBearerAuth()

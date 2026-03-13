@@ -14,6 +14,224 @@ import {
 
 const prisma = new PrismaClient();
 
+function buildSearchText(values: Array<string | null | undefined>): string {
+  return values
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .join(' ');
+}
+
+function joinUniqueValues(
+  values: Array<string | null | undefined>,
+): string | null {
+  const uniqueValues = [
+    ...new Set(
+      values
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+
+  return uniqueValues.length > 0 ? uniqueValues.join(' ') : null;
+}
+
+async function rebuildSearchDocuments(): Promise<void> {
+  await prisma.serviceSearchDocument.deleteMany();
+  await prisma.brandSearchDocument.deleteMany();
+  await prisma.providerSearchDocument.deleteMany();
+
+  const services = await prisma.service.findMany({
+    where: {
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      ownerUser: {
+        select: {
+          id: true,
+          fullName: true,
+        },
+      },
+      brand: {
+        select: {
+          name: true,
+        },
+      },
+      category: {
+        select: {
+          name: true,
+        },
+      },
+      address: {
+        select: {
+          city: true,
+          country: true,
+        },
+      },
+    },
+  });
+
+  if (services.length > 0) {
+    await prisma.serviceSearchDocument.createMany({
+      data: services.map((service) => ({
+        serviceId: service.id,
+        serviceName: service.name,
+        brandName: service.brand?.name ?? null,
+        ownerFullName: service.ownerUser.fullName,
+        categoryName: service.category?.name ?? null,
+        city: service.address?.city ?? null,
+        country: service.address?.country ?? null,
+        searchText: buildSearchText([
+          service.name,
+          service.description,
+          service.brand?.name,
+          service.ownerUser.fullName,
+          service.category?.name,
+          service.address?.city,
+          service.address?.country,
+        ]),
+      })),
+    });
+  }
+
+  const brands = await prisma.brand.findMany({
+    where: {
+      status: BrandStatus.ACTIVE,
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      owner: {
+        select: {
+          fullName: true,
+        },
+      },
+      addresses: {
+        where: {
+          isPrimary: true,
+        },
+        take: 1,
+        select: {
+          city: true,
+          country: true,
+        },
+      },
+    },
+  });
+
+  if (brands.length > 0) {
+    await prisma.brandSearchDocument.createMany({
+      data: brands.map((brand) => ({
+        brandId: brand.id,
+        brandName: brand.name,
+        ownerFullName: brand.owner.fullName,
+        city: brand.addresses[0]?.city ?? null,
+        country: brand.addresses[0]?.country ?? null,
+        searchText: buildSearchText([
+          brand.name,
+          brand.description,
+          brand.owner.fullName,
+          brand.addresses[0]?.city,
+          brand.addresses[0]?.country,
+        ]),
+      })),
+    });
+  }
+
+  const providers = await prisma.user.findMany({
+    where: {
+      status: UserStatus.ACTIVE,
+      roles: {
+        some: {
+          role: AppRole.USO,
+        },
+      },
+    },
+    select: {
+      id: true,
+      fullName: true,
+      services: {
+        where: {
+          isActive: true,
+        },
+        select: {
+          name: true,
+          address: {
+            select: {
+              city: true,
+              country: true,
+            },
+          },
+        },
+      },
+      ownedBrands: {
+        where: {
+          status: BrandStatus.ACTIVE,
+        },
+        select: {
+          name: true,
+          addresses: {
+            where: {
+              isPrimary: true,
+            },
+            take: 1,
+            select: {
+              city: true,
+              country: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (providers.length > 0) {
+    await prisma.providerSearchDocument.createMany({
+      data: providers.map((provider) => {
+        const serviceNames = joinUniqueValues(
+          provider.services.map((service) => service.name),
+        );
+        const brandNames = joinUniqueValues(
+          provider.ownedBrands.map((brand) => brand.name),
+        );
+        const cityNames = joinUniqueValues([
+          ...provider.services.map((service) => service.address?.city ?? null),
+          ...provider.ownedBrands.map(
+            (brand) => brand.addresses[0]?.city ?? null,
+          ),
+        ]);
+        const countryNames = joinUniqueValues([
+          ...provider.services.map(
+            (service) => service.address?.country ?? null,
+          ),
+          ...provider.ownedBrands.map(
+            (brand) => brand.addresses[0]?.country ?? null,
+          ),
+        ]);
+
+        return {
+          userId: provider.id,
+          fullName: provider.fullName,
+          serviceNames,
+          brandNames,
+          cityNames,
+          countryNames,
+          searchText: buildSearchText([
+            provider.fullName,
+            serviceNames,
+            brandNames,
+            cityNames,
+            countryNames,
+          ]),
+        };
+      }),
+    });
+  }
+}
+
 async function main(): Promise<void> {
   const users = [
     {
@@ -410,6 +628,8 @@ async function main(): Promise<void> {
       createdByAdminId: adminUser.id,
     },
   });
+
+  await rebuildSearchDocuments();
 }
 
 main()

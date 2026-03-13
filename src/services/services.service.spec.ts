@@ -8,6 +8,9 @@ import { ServicesService } from './services.service';
 
 describe('ServicesService', () => {
   it('creates a service for a USO with brand membership and availability rules', async () => {
+    const searchDocumentsService = {
+      syncServiceDocument: jest.fn().mockResolvedValue(undefined),
+    } as any;
     const userRoleFindUnique = jest.fn().mockResolvedValue({
       userId: 'uso-1',
       role: 'USO',
@@ -69,6 +72,7 @@ describe('ServicesService', () => {
         },
       ],
       availabilityExceptions: [],
+      manualBlocks: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -110,7 +114,12 @@ describe('ServicesService', () => {
     } as any;
     const storageService = {} as any;
 
-    const service = new ServicesService(prisma, brandsService, storageService);
+    const service = new ServicesService(
+      prisma,
+      brandsService,
+      storageService,
+      searchDocumentsService,
+    );
 
     const result = await service.createService('uso-1', {
       brandId: 'brand-1',
@@ -162,6 +171,10 @@ describe('ServicesService', () => {
       },
     });
     expect(availabilityCreateMany).toHaveBeenCalled();
+    expect(searchDocumentsService.syncServiceDocument).toHaveBeenCalledWith(
+      'service-1',
+      expect.any(Object),
+    );
     expect(result).toEqual(
       expect.objectContaining({
         service: expect.objectContaining({
@@ -170,6 +183,86 @@ describe('ServicesService', () => {
         }),
       }),
     );
+  });
+
+  it('replaces manual blocks for an owned service', async () => {
+    const serviceFindUnique = jest.fn().mockResolvedValue({
+      id: 'service-1',
+      ownerUserId: 'uso-1',
+    });
+    const manualBlockDeleteMany = jest.fn().mockResolvedValue(undefined);
+    const manualBlockCreateMany = jest.fn().mockResolvedValue(undefined);
+    const manualBlockFindMany = jest.fn().mockResolvedValue([
+      {
+        id: 'block-1',
+        serviceId: 'service-1',
+        startsAt: new Date('2026-04-05T10:00:00.000Z'),
+        endsAt: new Date('2026-04-05T11:30:00.000Z'),
+        reason: 'Private booking',
+      },
+    ]);
+
+    const prisma = {
+      service: {
+        findUnique: serviceFindUnique,
+      },
+      serviceManualBlock: {
+        deleteMany: manualBlockDeleteMany,
+        createMany: manualBlockCreateMany,
+        findMany: manualBlockFindMany,
+      },
+      serviceAvailabilityRule: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      serviceAvailabilityException: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      $transaction: jest.fn().mockResolvedValue(undefined),
+    } as any;
+
+    const service = new ServicesService(
+      prisma,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    const result = await service.replaceManualBlocks('uso-1', 'service-1', {
+      blocks: [
+        {
+          startsAt: '2026-04-05T10:00:00.000Z',
+          endsAt: '2026-04-05T11:30:00.000Z',
+          reason: 'Private booking',
+        },
+      ],
+    });
+
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(manualBlockDeleteMany).toHaveBeenCalledWith({
+      where: {
+        serviceId: 'service-1',
+      },
+    });
+    expect(manualBlockCreateMany).toHaveBeenCalledWith({
+      data: [
+        {
+          serviceId: 'service-1',
+          startsAt: new Date('2026-04-05T10:00:00.000Z'),
+          endsAt: new Date('2026-04-05T11:30:00.000Z'),
+          reason: 'Private booking',
+        },
+      ],
+    });
+    expect(result).toEqual({
+      rules: [],
+      exceptions: [],
+      manualBlocks: [
+        expect.objectContaining({
+          id: 'block-1',
+          reason: 'Private booking',
+        }),
+      ],
+    });
   });
 
   it('does not archive a service when active reservations exist', async () => {
@@ -207,7 +300,12 @@ describe('ServicesService', () => {
     const brandsService = {} as any;
     const storageService = {} as any;
 
-    const service = new ServicesService(prisma, brandsService, storageService);
+    const service = new ServicesService(
+      prisma,
+      brandsService,
+      storageService,
+      {} as any,
+    );
 
     await expect(service.archiveService('uso-1', 'service-1')).rejects.toThrow(
       'Services with active reservations cannot be archived.',

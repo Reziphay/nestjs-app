@@ -236,6 +236,8 @@ model User {
   notificationSettings                UserNotificationSettings?
   pushTokens                          PushToken[]
   serviceOwnerRatingStat              ServiceOwnerRatingStat?
+  serviceOwnerPopularityStat          ServiceOwnerPopularityStat?
+  providerSearchDocument             ProviderSearchDocument?
   visibilityAssignments               UserVisibilityAssignment[]    @relation("VisibleUserAssignments")
   createdVisibilityLabels             VisibilityLabel[]             @relation("VisibilityLabelCreator")
   createdBrandVisibilityAssignments   BrandVisibilityAssignment[]   @relation("BrandVisibilityAssignmentCreator")
@@ -349,6 +351,8 @@ model Brand {
   reservations          Reservation[]
   reviews               Review[]
   brandRatingStat       BrandRatingStat?
+  brandPopularityStat   BrandPopularityStat?
+  searchDocument        BrandSearchDocument?
   visibilityAssignments BrandVisibilityAssignment[]
 
   @@index([ownerUserId], map: "brands_owner_user_id_idx")
@@ -483,9 +487,12 @@ model Service {
   photos                 ServicePhoto[]
   availabilityRules      ServiceAvailabilityRule[]
   availabilityExceptions ServiceAvailabilityException[]
+  manualBlocks           ServiceManualBlock[]
   reservations           Reservation[]
   reviews                Review[]
   ratingStat             ServiceRatingStat?
+  popularityStat         ServicePopularityStat?
+  searchDocument         ServiceSearchDocument?
   visibilityAssignments  ServiceVisibilityAssignment[]
 
   @@index([ownerUserId, isActive], map: "services_owner_user_id_is_active_idx")
@@ -561,6 +568,22 @@ model ServiceAvailabilityException {
 
   @@index([serviceId, date], map: "service_availability_exceptions_service_id_date_idx")
   @@map("service_availability_exceptions")
+}
+
+model ServiceManualBlock {
+  id        String   @id @default(uuid()) @db.Uuid
+  serviceId String   @map("service_id") @db.Uuid
+  startsAt  DateTime @map("starts_at")
+  endsAt    DateTime @map("ends_at")
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId, startsAt], map: "service_manual_blocks_service_id_starts_at_idx")
+  @@index([serviceId, endsAt], map: "service_manual_blocks_service_id_ends_at_idx")
+  @@map("service_manual_blocks")
 }
 
 model Reservation {
@@ -880,6 +903,87 @@ model BrandRatingStat {
   brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@map("brand_rating_stats")
+}
+
+model ServicePopularityStat {
+  serviceId        String   @id @map("service_id") @db.Uuid
+  popularityScore  Int      @default(0) @map("popularity_score")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@map("service_popularity_stats")
+}
+
+model ServiceOwnerPopularityStat {
+  userId           String   @id @map("user_id") @db.Uuid
+  popularityScore  Int      @default(0) @map("popularity_score")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("service_owner_popularity_stats")
+}
+
+model BrandPopularityStat {
+  brandId          String   @id @map("brand_id") @db.Uuid
+  popularityScore  Int      @default(0) @map("popularity_score")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@map("brand_popularity_stats")
+}
+
+model ServiceSearchDocument {
+  serviceId      String   @id @map("service_id") @db.Uuid
+  serviceName    String   @map("service_name")
+  brandName      String?  @map("brand_name")
+  ownerFullName  String   @map("owner_full_name")
+  categoryName   String?  @map("category_name")
+  city           String?
+  country        String?
+  searchText     String   @map("search_text")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceName], map: "service_search_documents_service_name_idx")
+  @@index([brandName], map: "service_search_documents_brand_name_idx")
+  @@index([ownerFullName], map: "service_search_documents_owner_full_name_idx")
+  @@map("service_search_documents")
+}
+
+model BrandSearchDocument {
+  brandId        String   @id @map("brand_id") @db.Uuid
+  brandName      String   @map("brand_name")
+  ownerFullName  String   @map("owner_full_name")
+  city           String?
+  country        String?
+  searchText     String   @map("search_text")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandName], map: "brand_search_documents_brand_name_idx")
+  @@index([ownerFullName], map: "brand_search_documents_owner_full_name_idx")
+  @@map("brand_search_documents")
+}
+
+model ProviderSearchDocument {
+  userId         String   @id @map("user_id") @db.Uuid
+  fullName       String   @map("full_name")
+  serviceNames   String?  @map("service_names")
+  brandNames     String?  @map("brand_names")
+  cityNames      String?  @map("city_names")
+  countryNames   String?  @map("country_names")
+  searchText     String   @map("search_text")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([fullName], map: "provider_search_documents_full_name_idx")
+  @@map("provider_search_documents")
 }
 
 model VisibilityLabel {

@@ -28,6 +28,7 @@ import type { AuthenticatedRequestUser } from '../common/types/authenticated-req
 import { NotificationPreferencesService } from '../notification-preferences/notification-preferences.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReservationPopularityStatsService } from '../discovery-stats/reservation-popularity-stats.service';
 import { reservationConfig } from '../config';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { ListReservationsDto } from './dto/list-reservations.dto';
@@ -84,6 +85,11 @@ const reservableServiceInclude = {
   availabilityExceptions: {
     orderBy: {
       date: 'asc',
+    },
+  },
+  manualBlocks: {
+    orderBy: {
+      startsAt: 'asc',
     },
   },
 } satisfies Prisma.ServiceInclude;
@@ -215,6 +221,7 @@ export class ReservationsService {
     private readonly reservationJobsService: ReservationJobsService,
     private readonly notificationPreferencesService: NotificationPreferencesService,
     private readonly notificationsService: NotificationsService,
+    private readonly reservationPopularityStatsService: ReservationPopularityStatsService,
     private readonly jwtService: JwtService,
     @Inject(reservationConfig.KEY)
     private readonly reservationConfiguration: ConfigType<
@@ -381,6 +388,12 @@ export class ReservationsService {
             ? 'Reservation request created and awaiting owner response.'
             : 'Reservation auto-confirmed.',
       });
+      await this.syncPopularityTransition(
+        tx,
+        createdReservation,
+        null,
+        initialStatus,
+      );
 
       return tx.reservation.findUniqueOrThrow({
         where: {
@@ -480,6 +493,12 @@ export class ReservationsService {
         actorUserId: userId,
         reason: 'Reservation accepted by owner.',
       });
+      await this.syncPopularityTransition(
+        tx,
+        reservation,
+        reservation.status,
+        ReservationStatus.CONFIRMED,
+      );
 
       return tx.reservation.findUniqueOrThrow({
         where: {
@@ -611,6 +630,12 @@ export class ReservationsService {
         actorUserId: userId,
         reason: dto.reason.trim(),
       });
+      await this.syncPopularityTransition(
+        tx,
+        reservation,
+        reservation.status,
+        ReservationStatus.CANCELLED_BY_CUSTOMER,
+      );
 
       return tx.reservation.findUniqueOrThrow({
         where: {
@@ -673,6 +698,12 @@ export class ReservationsService {
         actorUserId: userId,
         reason: dto.reason.trim(),
       });
+      await this.syncPopularityTransition(
+        tx,
+        reservation,
+        reservation.status,
+        ReservationStatus.CANCELLED_BY_OWNER,
+      );
 
       return tx.reservation.findUniqueOrThrow({
         where: {
@@ -799,6 +830,12 @@ export class ReservationsService {
         actorUserId: userId,
         reason: dto.reason.trim(),
       });
+      await this.syncPopularityTransition(
+        tx,
+        reservation,
+        reservation.status,
+        nextStatus,
+      );
 
       return tx.reservation.findUniqueOrThrow({
         where: {
@@ -903,6 +940,12 @@ export class ReservationsService {
         actorUserId: userId,
         reason: 'Reservation change request accepted.',
       });
+      await this.syncPopularityTransition(
+        tx,
+        reservation,
+        reservation.status,
+        ReservationStatus.CONFIRMED,
+      );
 
       return tx.reservation.findUniqueOrThrow({
         where: {
@@ -984,6 +1027,12 @@ export class ReservationsService {
         actorUserId: userId,
         reason: 'Reservation change request rejected.',
       });
+      await this.syncPopularityTransition(
+        tx,
+        reservation,
+        reservation.status,
+        changeRequest.previousStatus,
+      );
 
       return tx.reservation.findUniqueOrThrow({
         where: {
@@ -1562,6 +1611,21 @@ export class ReservationsService {
     requestedStartAt: Date,
     requestedEndAt: Date | null,
   ): void {
+    const overlappingManualBlock = service.manualBlocks.find((manualBlock) =>
+      doReservationWindowsConflict(
+        requestedStartAt,
+        requestedEndAt,
+        manualBlock.startsAt,
+        manualBlock.endsAt,
+      ),
+    );
+
+    if (overlappingManualBlock) {
+      throw new BadRequestException(
+        'The requested time falls inside a manual service block.',
+      );
+    }
+
     const startTime = formatUtcTime(requestedStartAt);
     const endTime = requestedEndAt ? formatUtcTime(requestedEndAt) : null;
     const matchingException = service.availabilityExceptions.find((exception) =>
@@ -1755,6 +1819,25 @@ export class ReservationsService {
   ): Promise<void> {
     await tx.reservationStatusHistory.create({
       data,
+    });
+  }
+
+  private async syncPopularityTransition(
+    tx: Prisma.TransactionClient,
+    reservation: {
+      serviceId: string;
+      serviceOwnerUserId: string;
+      brandId: string | null;
+    },
+    fromStatus: ReservationStatus | null,
+    toStatus: ReservationStatus,
+  ): Promise<void> {
+    await this.reservationPopularityStatsService.syncReservationTransition(tx, {
+      serviceId: reservation.serviceId,
+      serviceOwnerUserId: reservation.serviceOwnerUserId,
+      brandId: reservation.brandId,
+      fromStatus,
+      toStatus,
     });
   }
 

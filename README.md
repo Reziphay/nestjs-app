@@ -10,7 +10,7 @@ Current backend foundation for the Reziphay MVP. This app is a NestJS modular mo
 - user profile and role activation endpoints
 - health checks for PostgreSQL and Redis
 - brands, memberships, and join requests
-- service categories, services, availability, and photo upload base
+- service categories, services, availability, manual blocks, and photo upload base
 - reservations, change requests, delay-status updates, manual approval expiration jobs, and completion flows
 - reviews, rating stats, in-app notifications, push-token registration, no-show penalties, and objections
 - admin moderation, visibility-label management, analytics, and discovery search
@@ -18,6 +18,7 @@ Current backend foundation for the Reziphay MVP. This app is a NestJS modular mo
 - appointment reminder jobs plus structured request and job logging with request IDs
 - persisted user notification settings for customizable appointment reminder timing
 - generic reporting for users, brands, services, and reviews with admin-ready target summaries
+- direct nearby-service and service-owner discovery endpoints plus brand-logo uploads
 
 ## Stack
 
@@ -96,6 +97,7 @@ pnpm test:e2e
 - `POST /api/v1/brands`
 - `GET /api/v1/brands/:id`
 - `PATCH /api/v1/brands/:id`
+- `POST /api/v1/brands/:id/logo`
 - `POST /api/v1/brands/:id/join-requests`
 - `GET /api/v1/brands/:id/join-requests`
 - `POST /api/v1/brands/:id/join-requests/:requestId/accept`
@@ -104,11 +106,13 @@ pnpm test:e2e
 - `GET /api/v1/brands/:id/members`
 - `GET /api/v1/categories`
 - `GET /api/v1/services`
+- `GET /api/v1/services/nearby`
 - `POST /api/v1/services`
 - `GET /api/v1/services/:id`
 - `PATCH /api/v1/services/:id`
 - `DELETE /api/v1/services/:id`
 - `PUT /api/v1/services/:id/availability-rules`
+- `PUT /api/v1/services/:id/manual-blocks`
 - `PUT /api/v1/services/:id/availability-exceptions`
 - `GET /api/v1/services/:id/availability`
 - `POST /api/v1/services/:id/photos`
@@ -139,6 +143,7 @@ pnpm test:e2e
 - `POST /api/v1/push-tokens`
 - `POST /api/v1/reports`
 - `GET /api/v1/search`
+- `GET /api/v1/service-owners`
 - `GET /api/v1/admin/reports`
 - `POST /api/v1/admin/reports/:id/resolve`
 - `GET /api/v1/admin/reservation-objections`
@@ -189,6 +194,22 @@ Notifications are always persisted in-app first. If `FCM_PROJECT_ID`, `FCM_CLIEN
 Phase 10 completes the generic complaint flow from the PRD. Clients can now create reports against users, brands, services, and reviews through `POST /api/v1/reports`, and admins receive a moderation-ready target summary when listing reports.
 
 Phase 11 adds customer delay-status updates on confirmed reservations. Owners receive in-app and optional push notifications when a customer reports `RUNNING_LATE` or `ARRIVED`, and the no-show worker now skips reservations already marked as arrived.
+
+Phase 12 exposes the remaining direct discovery surfaces from the brief: `GET /api/v1/services/nearby` for coordinate-based service discovery and `GET /api/v1/service-owners` for provider listings using the same ranking logic as `/api/v1/search`. It also adds multipart `POST /api/v1/brands/:id/logo`, and brand responses now include the resolved `logoFile` metadata when a logo is attached.
+
+Phase 13 adds owner-managed temporary manual blocks for services. `PUT /api/v1/services/:id/manual-blocks` replaces the current block set, `GET /api/v1/services/:id/availability` now returns `manualBlocks` alongside rules and exceptions, and reservation creation or change acceptance now rejects windows that overlap an active manual block.
+
+Phase 14 makes service discovery availability-aware. `GET /api/v1/search` and `GET /api/v1/services/nearby` now accept `requestedStartAt`, optional `requestedEndAt`, and `availableOnly=true`, then evaluate weekly rules, date exceptions, manual blocks, and confirmed `SOLO` reservations before ranking available services first and returning an `availability` snapshot on each service result.
+
+Phase 15 adds explicit discovery sort modes. `sortBy=RELEVANCE|PROXIMITY|RATING|PRICE_LOW|PRICE_HIGH|POPULARITY|AVAILABILITY` is now supported across discovery queries, with reservation-backed popularity ordering for services, brands, and providers. `PRICE_LOW` and `PRICE_HIGH` only affect service result arrays, while `PROXIMITY` requires `lat` and `lng`, and `AVAILABILITY` requires `requestedStartAt`.
+
+Phase 16 hardens popularity sorting for discovery. Search no longer performs live reservation `groupBy` aggregates for popularity ordering; instead it reads denormalized popularity stat tables for services, brands, and providers, and those counters are updated transactionally whenever a reservation enters or leaves the statuses that contribute to discovery popularity.
+
+Phase 17 hardens text discovery for PostgreSQL. When `q` is present, services, brands, and provider listings now use PostgreSQL full-text ranking plus trigram similarity to produce ranked candidate IDs before hydrating the normal Prisma include graph, and the database now enables `pg_trgm` with search-oriented trigram/full-text indexes on the main discovery text columns.
+
+Phase 18 introduces denormalized search documents. Services, brands, and provider profiles now maintain dedicated search-document rows that capture the text discovery layer, those documents are synchronized from the relevant brand/service/role write paths, and ranked discovery queries now read that search-document read model instead of building provider/service text from live aggregation joins.
+
+Phase 19 hardens discovery pagination and geo narrowing. Discovery endpoints now accept an opaque `cursor` and return `pageInfo` metadata, pagination is stabilized with deterministic tie-breaking, and when `lat`, `lng`, and `radiusKm` are provided the search layer now narrows service/brand/provider candidates in the database before the existing in-memory ranking and serialization steps.
 
 Phase 5 adds admin moderation APIs, admin audit logging, reusable visibility labels for brands/services/providers, and PostgreSQL-backed discovery search across services, brands, and provider profiles.
 

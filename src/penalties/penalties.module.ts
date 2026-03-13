@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 
+import { DiscoveryStatsModule } from '../discovery-stats/discovery-stats.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PENALTIES_QUEUE } from './penalties.constants';
 import { PenaltyJobsService } from './penalty-jobs.service';
@@ -18,6 +19,7 @@ import { ReservationObjectionsController } from './reservation-objections.contro
         removeOnFail: 100,
       },
     }),
+    DiscoveryStatsModule,
     NotificationsModule,
   ],
   controllers: [PenaltiesController, ReservationObjectionsController],

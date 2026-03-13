@@ -14,6 +14,7 @@ import {
 import { BrandsService } from '../brands/brands.service';
 import { isValidTimeRange } from '../common/utils/time.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { SearchDocumentsService } from '../search-documents/search-documents.service';
 import { StorageService } from '../storage/storage.service';
 import {
   CreateServiceDto,
@@ -24,10 +25,13 @@ import { ListServicesDto } from './dto/list-services.dto';
 import { serializeActiveVisibilityLabels } from '../common/utils/visibility.util';
 import {
   ReplaceServiceAvailabilityExceptionsDto,
+  ReplaceServiceManualBlocksDto,
   ReplaceServiceAvailabilityRulesDto,
   ServiceAvailabilityExceptionDto,
+  ServiceManualBlockDto,
   ServiceAvailabilityRuleDto,
 } from './dto/service-availability.dto';
+import { doReservationWindowsConflict } from '../reservations/reservation-time.util';
 
 @Injectable()
 export class ServicesService {
@@ -35,6 +39,7 @@ export class ServicesService {
     private readonly prisma: PrismaService,
     private readonly brandsService: BrandsService,
     private readonly storageService: StorageService,
+    private readonly searchDocumentsService: SearchDocumentsService,
   ) {}
 
   async listServices(query: ListServicesDto): Promise<Record<string, unknown>> {
@@ -129,6 +134,11 @@ export class ServicesService {
           })),
         });
       }
+
+      await this.searchDocumentsService.syncServiceDocument(
+        createdService.id,
+        tx,
+      );
 
       return tx.service.findUniqueOrThrow({
         where: {
@@ -237,6 +247,8 @@ export class ServicesService {
         },
       });
 
+      await this.searchDocumentsService.syncServiceDocument(service.id, tx);
+
       return tx.service.findUniqueOrThrow({
         where: {
           id: service.id,
@@ -284,6 +296,8 @@ export class ServicesService {
       },
       include: this.serviceInclude,
     });
+
+    await this.searchDocumentsService.syncServiceDocument(service.id);
 
     return {
       service: this.serializeService(archivedService),
@@ -355,6 +369,37 @@ export class ServicesService {
     return this.getAvailability(service.id);
   }
 
+  async replaceManualBlocks(
+    userId: string,
+    serviceId: string,
+    dto: ReplaceServiceManualBlocksDto,
+  ): Promise<Record<string, unknown>> {
+    const service = await this.getOwnedServiceOrThrow(userId, serviceId);
+    this.validateManualBlocks(dto.blocks);
+
+    await this.prisma.$transaction([
+      this.prisma.serviceManualBlock.deleteMany({
+        where: {
+          serviceId: service.id,
+        },
+      }),
+      ...(dto.blocks.length > 0
+        ? [
+            this.prisma.serviceManualBlock.createMany({
+              data: dto.blocks.map((block) => ({
+                serviceId: service.id,
+                startsAt: new Date(block.startsAt),
+                endsAt: new Date(block.endsAt),
+                reason: block.reason?.trim() || null,
+              })),
+            }),
+          ]
+        : []),
+    ]);
+
+    return this.getAvailability(service.id);
+  }
+
   async getAvailability(serviceId: string): Promise<Record<string, unknown>> {
     const service = await this.prisma.service.findUnique({
       where: {
@@ -369,7 +414,7 @@ export class ServicesService {
       throw new NotFoundException('Service not found.');
     }
 
-    const [rules, exceptions] = await Promise.all([
+    const [rules, exceptions, manualBlocks] = await Promise.all([
       this.prisma.serviceAvailabilityRule.findMany({
         where: {
           serviceId,
@@ -384,11 +429,20 @@ export class ServicesService {
           date: 'asc',
         },
       }),
+      this.prisma.serviceManualBlock.findMany({
+        where: {
+          serviceId,
+        },
+        orderBy: {
+          startsAt: 'asc',
+        },
+      }),
     ]);
 
     return {
       rules,
       exceptions,
+      manualBlocks,
     };
   }
 
@@ -614,6 +668,50 @@ export class ServicesService {
     }
   }
 
+  private validateManualBlocks(blocks: ServiceManualBlockDto[]): void {
+    const parsedBlocks = blocks.map((block) => {
+      const startsAt = new Date(block.startsAt);
+      const endsAt = new Date(block.endsAt);
+
+      if (
+        Number.isNaN(startsAt.getTime()) ||
+        Number.isNaN(endsAt.getTime()) ||
+        endsAt.getTime() <= startsAt.getTime()
+      ) {
+        throw new BadRequestException(
+          'Manual blocks must have a valid end time after the start time.',
+        );
+      }
+
+      return {
+        startsAt,
+        endsAt,
+      };
+    });
+
+    parsedBlocks.sort(
+      (left, right) => left.startsAt.getTime() - right.startsAt.getTime(),
+    );
+
+    for (let index = 1; index < parsedBlocks.length; index += 1) {
+      const previousBlock = parsedBlocks[index - 1];
+      const currentBlock = parsedBlocks[index];
+
+      if (
+        doReservationWindowsConflict(
+          currentBlock.startsAt,
+          currentBlock.endsAt,
+          previousBlock.startsAt,
+          previousBlock.endsAt,
+        )
+      ) {
+        throw new BadRequestException(
+          'Manual blocks must not overlap each other.',
+        );
+      }
+    }
+  }
+
   private async createServiceAddress(
     tx: Prisma.TransactionClient,
     userId: string,
@@ -747,6 +845,7 @@ export class ServicesService {
       availability: {
         rules: service.availabilityRules,
         exceptions: service.availabilityExceptions,
+        manualBlocks: service.manualBlocks,
       },
       createdAt: service.createdAt,
       updatedAt: service.updatedAt,
@@ -836,6 +935,11 @@ export class ServicesService {
       availabilityExceptions: {
         orderBy: {
           date: 'asc' as const,
+        },
+      },
+      manualBlocks: {
+        orderBy: {
+          startsAt: 'asc' as const,
         },
       },
     };

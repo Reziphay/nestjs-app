@@ -30,11 +30,15 @@ describe('ReservationsService', () => {
       },
     }),
   };
+  const reservationPopularityStatsService = {
+    syncReservationTransition: jest.fn().mockResolvedValue(undefined),
+  };
 
   beforeEach(() => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-03-13T08:00:00.000Z'));
     notificationPreferencesService.getResolvedNotificationSettings.mockClear();
+    reservationPopularityStatsService.syncReservationTransition.mockClear();
     notificationPreferencesService.getResolvedNotificationSettings.mockResolvedValue(
       {
         hasCustomPreferences: false,
@@ -83,6 +87,7 @@ describe('ReservationsService', () => {
         },
       ],
       availabilityExceptions: [],
+      manualBlocks: [],
     });
     const reservationFindMany = jest.fn().mockResolvedValue([]);
     const reservationCreate = jest.fn().mockResolvedValue({
@@ -181,6 +186,7 @@ describe('ReservationsService', () => {
       } as any,
       notificationPreferencesService as any,
       notificationsService as any,
+      reservationPopularityStatsService as any,
       new JwtService(),
       reservationConfig as any,
     );
@@ -210,6 +216,78 @@ describe('ReservationsService', () => {
           status: ReservationStatus.PENDING,
         }),
       }),
+    );
+  });
+
+  it('rejects reservation creation inside a manual service block', async () => {
+    const userRoleFindUnique = jest.fn().mockResolvedValue({
+      userId: 'customer-1',
+      role: 'UCR',
+    });
+    const userFindUnique = jest.fn().mockResolvedValue({
+      id: 'customer-1',
+      status: UserStatus.ACTIVE,
+    });
+    const serviceFindUnique = jest.fn().mockResolvedValue({
+      id: 'service-1',
+      ownerUserId: 'owner-1',
+      brandId: null,
+      minAdvanceMinutes: 60,
+      maxAdvanceMinutes: 60 * 24 * 30,
+      approvalMode: ApprovalMode.MANUAL,
+      serviceType: ServiceType.SOLO,
+      isActive: true,
+      brand: null,
+      ownerUser: {
+        id: 'owner-1',
+        fullName: 'Demo Owner',
+      },
+      availabilityRules: [
+        {
+          dayOfWeek: 'MONDAY',
+          startTime: '09:00',
+          endTime: '18:00',
+          isActive: true,
+        },
+      ],
+      availabilityExceptions: [],
+      manualBlocks: [
+        {
+          id: 'block-1',
+          startsAt: new Date('2026-03-16T10:00:00.000Z'),
+          endsAt: new Date('2026-03-16T11:00:00.000Z'),
+          reason: 'Private event',
+        },
+      ],
+    });
+
+    const service = new ReservationsService(
+      {
+        userRole: {
+          findUnique: userRoleFindUnique,
+        },
+        user: {
+          findUnique: userFindUnique,
+        },
+        service: {
+          findUnique: serviceFindUnique,
+        },
+      } as any,
+      {} as any,
+      notificationPreferencesService as any,
+      {} as any,
+      reservationPopularityStatsService as any,
+      new JwtService(),
+      reservationConfig as any,
+    );
+
+    await expect(
+      service.createReservation('customer-1', {
+        serviceId: 'service-1',
+        requestedStartAt: '2026-03-16T10:15:00.000Z',
+      }),
+    ).rejects.toThrow(
+      'The requested time falls inside a manual service block.',
     );
   });
 
@@ -280,6 +358,7 @@ describe('ReservationsService', () => {
       },
       availabilityRules: [],
       availabilityExceptions: [],
+      manualBlocks: [],
     });
     const reservationFindMany = jest.fn().mockResolvedValue([]);
     const reservationUpdate = jest.fn().mockResolvedValue(undefined);
@@ -380,6 +459,7 @@ describe('ReservationsService', () => {
       {
         notifyReservationConfirmed: jest.fn().mockResolvedValue(undefined),
       } as any,
+      reservationPopularityStatsService as any,
       new JwtService(),
       reservationConfig as any,
     );
@@ -554,6 +634,7 @@ describe('ReservationsService', () => {
       {
         notifyReservationDelayUpdated,
       } as any,
+      reservationPopularityStatsService as any,
       new JwtService(),
       reservationConfig as any,
     );
@@ -670,6 +751,7 @@ describe('ReservationsService', () => {
       {
         notifyReservationReminder,
       } as any,
+      reservationPopularityStatsService as any,
       new JwtService(),
       reservationConfig as any,
     );
@@ -831,6 +913,7 @@ describe('ReservationsService', () => {
       {
         notifyReservationCompleted,
       } as any,
+      reservationPopularityStatsService as any,
       jwtService,
       reservationConfig as any,
     );
@@ -905,6 +988,7 @@ describe('ReservationsService', () => {
       {
         notifyReservationExpired: jest.fn().mockResolvedValue(undefined),
       } as any,
+      reservationPopularityStatsService as any,
       new JwtService(),
       reservationConfig as any,
     );

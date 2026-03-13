@@ -4,6 +4,7 @@ import { AppRole } from '../common/enums/app-role.enum';
 import { AuthService } from '../auth/auth.service';
 import { NotificationPreferencesService } from '../notification-preferences/notification-preferences.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SearchDocumentsService } from '../search-documents/search-documents.service';
 import { UpdateNotificationSettingsDto } from './dto/update-notification-settings.dto';
 
 @Injectable()
@@ -12,6 +13,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
     private readonly notificationPreferencesService: NotificationPreferencesService,
+    private readonly searchDocumentsService: SearchDocumentsService,
   ) {}
 
   getMe(userId: string, sessionId: string): Promise<Record<string, unknown>> {
@@ -51,6 +53,8 @@ export class UsersService {
         role: AppRole.USO,
       },
     });
+
+    await this.searchDocumentsService.syncProviderDocument(userId);
 
     return this.authService.reissueTokensForSession(
       userId,

@@ -17,6 +17,9 @@ describe('PenaltiesService', () => {
     const reservationFindMany = jest.fn().mockResolvedValue([
       {
         id: 'reservation-1',
+        serviceId: 'service-1',
+        serviceOwnerUserId: 'owner-1',
+        brandId: null,
         status: ReservationStatus.CONFIRMED,
         delayStatus: ReservationDelayStatus.NONE,
         requestedStartAt: new Date('2026-03-20T10:00:00.000Z'),
@@ -37,6 +40,9 @@ describe('PenaltiesService', () => {
     ]);
     const currentReservation = {
       id: 'reservation-1',
+      serviceId: 'service-1',
+      serviceOwnerUserId: 'owner-1',
+      brandId: null,
       status: ReservationStatus.CONFIRMED,
       delayStatus: ReservationDelayStatus.NONE,
       requestedStartAt: new Date('2026-03-20T10:00:00.000Z'),
@@ -78,6 +84,7 @@ describe('PenaltiesService', () => {
     const penaltyActionFindFirst = jest.fn().mockResolvedValue(null);
     const notifyReservationNoShow = jest.fn().mockResolvedValue(undefined);
     const notifyPenaltyApplied = jest.fn().mockResolvedValue(undefined);
+    const syncReservationTransition = jest.fn().mockResolvedValue(undefined);
 
     const prisma = {
       reservation: {
@@ -112,10 +119,16 @@ describe('PenaltiesService', () => {
       ),
     } as any;
 
-    const service = new PenaltiesService(prisma, {
-      notifyReservationNoShow,
-      notifyPenaltyApplied,
-    } as any);
+    const service = new PenaltiesService(
+      prisma,
+      {
+        notifyReservationNoShow,
+        notifyPenaltyApplied,
+      } as any,
+      {
+        syncReservationTransition,
+      } as any,
+    );
 
     const result = await service.processNoShows();
 
@@ -128,6 +141,7 @@ describe('PenaltiesService', () => {
       },
     });
     expect(penaltyPointUpsert).toHaveBeenCalled();
+    expect(syncReservationTransition).toHaveBeenCalled();
     expect(notifyReservationNoShow).toHaveBeenCalled();
     expect(notifyPenaltyApplied).toHaveBeenCalledWith({
       userId: 'customer-1',
@@ -148,6 +162,9 @@ describe('PenaltiesService', () => {
     const reservationFindMany = jest.fn().mockResolvedValue([
       {
         id: 'reservation-1',
+        serviceId: 'service-1',
+        serviceOwnerUserId: 'owner-1',
+        brandId: null,
         status: ReservationStatus.CONFIRMED,
         delayStatus: ReservationDelayStatus.ARRIVED,
         requestedStartAt: new Date('2026-03-20T10:00:00.000Z'),
@@ -168,6 +185,9 @@ describe('PenaltiesService', () => {
     ]);
     const reservationFindUnique = jest.fn().mockResolvedValue({
       id: 'reservation-1',
+      serviceId: 'service-1',
+      serviceOwnerUserId: 'owner-1',
+      brandId: null,
       status: ReservationStatus.CONFIRMED,
       delayStatus: ReservationDelayStatus.ARRIVED,
       requestedStartAt: new Date('2026-03-20T10:00:00.000Z'),
@@ -186,6 +206,7 @@ describe('PenaltiesService', () => {
       },
     });
     const reservationUpdate = jest.fn();
+    const syncReservationTransition = jest.fn();
 
     const prisma = {
       reservation: {
@@ -204,10 +225,16 @@ describe('PenaltiesService', () => {
       ),
     } as any;
 
-    const service = new PenaltiesService(prisma, {
-      notifyReservationNoShow: jest.fn(),
-      notifyPenaltyApplied: jest.fn(),
-    } as any);
+    const service = new PenaltiesService(
+      prisma,
+      {
+        notifyReservationNoShow: jest.fn(),
+        notifyPenaltyApplied: jest.fn(),
+      } as any,
+      {
+        syncReservationTransition,
+      } as any,
+    );
 
     const result = await service.processNoShows();
 
