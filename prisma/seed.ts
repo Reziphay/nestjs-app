@@ -1,7 +1,15 @@
-import { PrismaClient } from '@prisma/client';
+import 'dotenv/config';
 
-import { AppRole } from '../src/common/enums/app-role.enum';
-import { UserStatus } from '../src/common/enums/user-status.enum';
+import {
+  AppRole,
+  ApprovalMode,
+  BrandMembershipRole,
+  BrandMembershipStatus,
+  BrandStatus,
+  PrismaClient,
+  ServiceType,
+  UserStatus,
+} from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -65,6 +73,225 @@ async function main(): Promise<void> {
       });
     }
   }
+
+  const categories = [
+    {
+      name: 'Barber',
+      slug: 'barber',
+    },
+    {
+      name: 'Dentistry',
+      slug: 'dentistry',
+    },
+    {
+      name: 'Beauty',
+      slug: 'beauty',
+    },
+  ];
+
+  for (const category of categories) {
+    await prisma.serviceCategory.upsert({
+      where: {
+        slug: category.slug,
+      },
+      update: {
+        name: category.name,
+        isActive: true,
+      },
+      create: {
+        name: category.name,
+        slug: category.slug,
+        isActive: true,
+      },
+    });
+  }
+
+  const demoOwner = await prisma.user.findUniqueOrThrow({
+    where: {
+      phone: '+10000000003',
+    },
+  });
+
+  const barberCategory = await prisma.serviceCategory.findUniqueOrThrow({
+    where: {
+      slug: 'barber',
+    },
+  });
+
+  let demoBrand = await prisma.brand.findFirst({
+    where: {
+      ownerUserId: demoOwner.id,
+      name: 'Studio Reziphay',
+    },
+  });
+
+  if (!demoBrand) {
+    demoBrand = await prisma.brand.create({
+      data: {
+        ownerUserId: demoOwner.id,
+        name: 'Studio Reziphay',
+        description: 'Demo studio for backend development.',
+        status: BrandStatus.ACTIVE,
+      },
+    });
+  }
+
+  await prisma.brandMembership.upsert({
+    where: {
+      brandId_userId: {
+        brandId: demoBrand.id,
+        userId: demoOwner.id,
+      },
+    },
+    update: {
+      membershipRole: BrandMembershipRole.OWNER,
+      status: BrandMembershipStatus.ACTIVE,
+    },
+    create: {
+      brandId: demoBrand.id,
+      userId: demoOwner.id,
+      membershipRole: BrandMembershipRole.OWNER,
+      status: BrandMembershipStatus.ACTIVE,
+    },
+  });
+
+  const primaryBrandAddress = await prisma.brandAddress.findFirst({
+    where: {
+      brandId: demoBrand.id,
+      isPrimary: true,
+    },
+  });
+
+  if (primaryBrandAddress) {
+    await prisma.brandAddress.update({
+      where: {
+        id: primaryBrandAddress.id,
+      },
+      data: {
+        fullAddress: '123 Demo Street',
+        country: 'Azerbaijan',
+        city: 'Baku',
+        lat: 40.4093,
+        lng: 49.8671,
+      },
+    });
+  } else {
+    await prisma.brandAddress.create({
+      data: {
+        brandId: demoBrand.id,
+        label: 'Main Studio',
+        fullAddress: '123 Demo Street',
+        country: 'Azerbaijan',
+        city: 'Baku',
+        lat: 40.4093,
+        lng: 49.8671,
+        isPrimary: true,
+      },
+    });
+  }
+
+  let demoServiceAddress = await prisma.serviceAddress.findFirst({
+    where: {
+      ownerUserId: demoOwner.id,
+      fullAddress: '123 Demo Street',
+    },
+  });
+
+  if (!demoServiceAddress) {
+    demoServiceAddress = await prisma.serviceAddress.create({
+      data: {
+        brandId: demoBrand.id,
+        ownerUserId: demoOwner.id,
+        label: 'Chair 1',
+        fullAddress: '123 Demo Street',
+        country: 'Azerbaijan',
+        city: 'Baku',
+        lat: 40.4093,
+        lng: 49.8671,
+      },
+    });
+  }
+
+  let demoService = await prisma.service.findFirst({
+    where: {
+      ownerUserId: demoOwner.id,
+      name: 'Classic Haircut',
+    },
+  });
+
+  if (!demoService) {
+    demoService = await prisma.service.create({
+      data: {
+        ownerUserId: demoOwner.id,
+        brandId: demoBrand.id,
+        categoryId: barberCategory.id,
+        addressId: demoServiceAddress.id,
+        name: 'Classic Haircut',
+        description: 'Demo seeded service for the MVP backend.',
+        priceAmount: 25,
+        priceCurrency: 'AZN',
+        waitingTimeMinutes: 15,
+        minAdvanceMinutes: 60,
+        maxAdvanceMinutes: 14 * 24 * 60,
+        serviceType: ServiceType.SOLO,
+        approvalMode: ApprovalMode.MANUAL,
+        freeCancellationDeadlineMinutes: 120,
+        isActive: true,
+      },
+    });
+  } else {
+    await prisma.service.update({
+      where: {
+        id: demoService.id,
+      },
+      data: {
+        brandId: demoBrand.id,
+        categoryId: barberCategory.id,
+        addressId: demoServiceAddress.id,
+        priceAmount: 25,
+        priceCurrency: 'AZN',
+        waitingTimeMinutes: 15,
+        minAdvanceMinutes: 60,
+        maxAdvanceMinutes: 14 * 24 * 60,
+        serviceType: ServiceType.SOLO,
+        approvalMode: ApprovalMode.MANUAL,
+        freeCancellationDeadlineMinutes: 120,
+        isActive: true,
+      },
+    });
+  }
+
+  await prisma.serviceAvailabilityRule.deleteMany({
+    where: {
+      serviceId: demoService.id,
+    },
+  });
+
+  await prisma.serviceAvailabilityRule.createMany({
+    data: [
+      {
+        serviceId: demoService.id,
+        dayOfWeek: 'MONDAY',
+        startTime: '09:00',
+        endTime: '18:00',
+        isActive: true,
+      },
+      {
+        serviceId: demoService.id,
+        dayOfWeek: 'TUESDAY',
+        startTime: '09:00',
+        endTime: '18:00',
+        isActive: true,
+      },
+      {
+        serviceId: demoService.id,
+        dayOfWeek: 'WEDNESDAY',
+        startTime: '09:00',
+        endTime: '18:00',
+        isActive: true,
+      },
+    ],
+  });
 }
 
 main()

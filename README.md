@@ -9,6 +9,8 @@ Phase 1 foundation for the Reziphay backend MVP. This app is a NestJS modular mo
 - JWT access/refresh sessions with role-aware switching
 - user profile and role activation endpoints
 - health checks for PostgreSQL and Redis
+- brands, memberships, and join requests
+- service categories, services, availability, and photo upload base
 
 ## Stack
 
@@ -81,6 +83,27 @@ pnpm test:e2e
 - `GET /api/v1/users/me/roles`
 - `POST /api/v1/users/me/switch-role`
 - `GET /api/v1/health`
+- `GET /api/v1/brands`
+- `POST /api/v1/brands`
+- `GET /api/v1/brands/:id`
+- `PATCH /api/v1/brands/:id`
+- `POST /api/v1/brands/:id/join-requests`
+- `GET /api/v1/brands/:id/join-requests`
+- `POST /api/v1/brands/:id/join-requests/:requestId/accept`
+- `POST /api/v1/brands/:id/join-requests/:requestId/reject`
+- `POST /api/v1/brands/:id/transfer-ownership`
+- `GET /api/v1/brands/:id/members`
+- `GET /api/v1/categories`
+- `GET /api/v1/services`
+- `POST /api/v1/services`
+- `GET /api/v1/services/:id`
+- `PATCH /api/v1/services/:id`
+- `DELETE /api/v1/services/:id`
+- `PUT /api/v1/services/:id/availability-rules`
+- `PUT /api/v1/services/:id/availability-exceptions`
+- `GET /api/v1/services/:id/availability`
+- `POST /api/v1/services/:id/photos`
+- `DELETE /api/v1/services/:id/photos/:photoId`
 
 Swagger is exposed at [http://localhost:3000/api/docs](http://localhost:3000/api/docs) when `SWAGGER_ENABLED=true`.
 
@@ -92,4 +115,12 @@ These records are meant for local development only:
 - `customer@reziphay.local` / `+10000000002`
 - `uso@reziphay.local` / `+10000000003`
 
+Seeded domain data:
+
+- brand: `Studio Reziphay`
+- category: `Barber`, `Dentistry`, `Beauty`
+- service: `Classic Haircut`
+
 Phone OTP delivery is intentionally stubbed in Phase 1. In non-production environments, the requested OTP or email verification token is returned in the API response so local testing stays fast.
+
+File uploads use the local storage driver in Phase 2 and write into `.local-storage/uploads`. The storage abstraction is in place so this can be replaced with S3-compatible storage later.

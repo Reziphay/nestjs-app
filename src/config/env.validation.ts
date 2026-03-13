@@ -78,6 +78,34 @@ class EnvironmentVariables {
   @IsNotEmpty()
   CORS_ORIGIN!: string;
 
+  @IsOptional()
+  @IsString()
+  STORAGE_DRIVER?: string;
+
+  @IsOptional()
+  @IsString()
+  STORAGE_LOCAL_DIR?: string;
+
+  @IsOptional()
+  @IsString()
+  S3_ENDPOINT?: string;
+
+  @IsOptional()
+  @IsString()
+  S3_REGION?: string;
+
+  @IsOptional()
+  @IsString()
+  S3_BUCKET?: string;
+
+  @IsOptional()
+  @IsString()
+  S3_ACCESS_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  S3_SECRET_KEY?: string;
+
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   SWAGGER_ENABLED!: boolean;
