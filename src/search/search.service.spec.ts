@@ -468,6 +468,16 @@ describe('SearchService', () => {
   });
 
   it('filters unavailable services when availableOnly is true', async () => {
+    const queryRaw = jest.fn().mockResolvedValue([
+      {
+        id: 'service-unavailable',
+        exact_distance_km: 0.6,
+      },
+      {
+        id: 'service-available',
+        exact_distance_km: 1.2,
+      },
+    ]);
     const serviceFindMany = jest.fn().mockResolvedValue([
       {
         id: 'service-available',
@@ -550,6 +560,7 @@ describe('SearchService', () => {
     ]);
 
     const service = new SearchService({
+      $queryRaw: queryRaw,
       service: {
         findMany: serviceFindMany,
       },
@@ -590,6 +601,7 @@ describe('SearchService', () => {
         }),
       }),
     );
+    expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it('sorts service discovery by low price when sortBy=PRICE_LOW', async () => {
@@ -869,11 +881,12 @@ describe('SearchService', () => {
   });
 
   it('adds DB-side geo bounds when radiusKm is provided', async () => {
-    const serviceFindMany = jest.fn().mockResolvedValue([]);
+    const queryRaw = jest.fn().mockResolvedValue([]);
 
     const service = new SearchService({
+      $queryRaw: queryRaw,
       service: {
-        findMany: serviceFindMany,
+        findMany: jest.fn().mockResolvedValue([]),
       },
       brand: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -890,27 +903,26 @@ describe('SearchService', () => {
       limit: 10,
     });
 
-    expect(serviceFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          address: {
-            is: expect.objectContaining({
-              lat: expect.objectContaining({
-                gte: expect.any(Number),
-                lte: expect.any(Number),
-              }),
-              lng: expect.objectContaining({
-                gte: expect.any(Number),
-                lte: expect.any(Number),
-              }),
-            }),
-          },
-        }),
-      }),
-    );
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const rawCalls = queryRaw.mock.calls as Array<
+      [{ strings?: string[] } | undefined]
+    >;
+    const rawSql = rawCalls[0]?.[0]?.strings?.join(' ');
+    expect(rawSql).toContain('earth_distance');
+    expect(rawSql).toContain('sa.lat between');
   });
 
   it('returns cursor page info for nearby services', async () => {
+    const queryRaw = jest.fn().mockResolvedValue([
+      {
+        id: 'service-first',
+        exact_distance_km: 0.2,
+      },
+      {
+        id: 'service-second',
+        exact_distance_km: 1.4,
+      },
+    ]);
     const serviceFindMany = jest.fn().mockResolvedValue([
       {
         id: 'service-first',
@@ -983,6 +995,7 @@ describe('SearchService', () => {
     ]);
 
     const service = new SearchService({
+      $queryRaw: queryRaw,
       service: {
         findMany: serviceFindMany,
       },
@@ -1036,6 +1049,7 @@ describe('SearchService', () => {
         }),
       }),
     );
+    expect(queryRaw).toHaveBeenCalledTimes(2);
   });
 
   it('returns direct provider discovery items for service-owner listings', async () => {
@@ -1043,6 +1057,7 @@ describe('SearchService', () => {
       {
         id: 'owner-1',
         relevance_score: 18.2,
+        exact_distance_km: 0.55,
       },
     ]);
     const userFindMany = jest.fn().mockResolvedValue([
@@ -1108,7 +1123,7 @@ describe('SearchService', () => {
           expect.objectContaining({
             id: 'owner-1',
             name: 'Demo Owner',
-            distanceKm: 0,
+            distanceKm: 0.55,
           }),
         ],
         pageInfo: expect.objectContaining({

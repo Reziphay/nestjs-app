@@ -15,8 +15,14 @@ import { AppRole } from '../common/enums/app-role.enum';
 import { AccessTokenGuard } from '../common/guards/access-token.guard';
 import type { AuthenticatedRequestUser } from '../common/types/authenticated-request-user.type';
 import { AdminService } from './admin.service';
+import { CreateSponsoredVisibilityDto } from './dto/create-sponsored-visibility.dto';
+import { ListAdminActivityDto } from './dto/list-admin-activity.dto';
+import { ListAdminBrandsDto } from './dto/list-admin-brands.dto';
 import { ListAdminReservationObjectionsDto } from './dto/list-admin-reservation-objections.dto';
 import { ListAdminReportsDto } from './dto/list-admin-reports.dto';
+import { ListAdminServicesDto } from './dto/list-admin-services.dto';
+import { ListAdminUsersDto } from './dto/list-admin-users.dto';
+import { AdminUserActionDto } from './dto/admin-user-action.dto';
 import { CloseUserDto, SuspendUserDto } from './dto/moderate-user.dto';
 import {
   ResolveReportDto,
@@ -37,11 +43,23 @@ import {
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
+  @Get('overview')
+  getOverview(): Promise<Record<string, unknown>> {
+    return this.adminService.getOverview();
+  }
+
   @Get('reports')
   listReports(
     @Query() query: ListAdminReportsDto,
   ): Promise<Record<string, unknown>> {
     return this.adminService.listReports(query);
+  }
+
+  @Get('reports/:id')
+  getReportDetail(
+    @Param('id') reportId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.getReportDetail(reportId);
   }
 
   @Post('reports/:id/resolve')
@@ -51,6 +69,16 @@ export class AdminController {
     @Body() dto: ResolveReportDto,
   ): Promise<Record<string, unknown>> {
     return this.adminService.resolveReport(user.sub, reportId, dto);
+  }
+
+  @Post('reports/:id/:action')
+  applyReportAction(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Param('id') reportId: string,
+    @Param('action') action: string,
+    @Body() dto: ResolveReportDto,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.applyReportAction(user.sub, reportId, action, dto);
   }
 
   @Get('reservation-objections')
@@ -73,6 +101,23 @@ export class AdminController {
     );
   }
 
+  @Get('users')
+  listUsers(@Query() query: ListAdminUsersDto): Promise<Record<string, unknown>> {
+    return this.adminService.listUsers(query);
+  }
+
+  @Get('users/:id/detail')
+  getUserAdminDetail(
+    @Param('id') userId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.getUserAdminDetail(userId);
+  }
+
+  @Get('users/:id')
+  getUser(@Param('id') userId: string): Promise<Record<string, unknown>> {
+    return this.adminService.getUser(userId);
+  }
+
   @Post('users/:id/suspend')
   suspendUser(
     @CurrentUser() user: AuthenticatedRequestUser,
@@ -89,6 +134,59 @@ export class AdminController {
     @Body() dto: CloseUserDto,
   ): Promise<Record<string, unknown>> {
     return this.adminService.closeUser(user.sub, targetUserId, dto);
+  }
+
+  @Post('users/:id/:action')
+  applyUserAction(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Param('id') targetUserId: string,
+    @Param('action') action: string,
+    @Body() dto: AdminUserActionDto,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.applyUserAction(
+      user.sub,
+      targetUserId,
+      action,
+      dto,
+    );
+  }
+
+  @Get('brands')
+  listBrands(
+    @Query() query: ListAdminBrandsDto,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.listBrands(query);
+  }
+
+  @Get('brands/:id/detail')
+  getBrandAdminDetail(
+    @Param('id') brandId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.getBrandAdminDetail(brandId);
+  }
+
+  @Get('brands/:id')
+  getBrand(@Param('id') brandId: string): Promise<Record<string, unknown>> {
+    return this.adminService.getBrand(brandId);
+  }
+
+  @Get('services')
+  listServices(
+    @Query() query: ListAdminServicesDto,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.listServices(query);
+  }
+
+  @Get('services/:id/detail')
+  getServiceAdminDetail(
+    @Param('id') serviceId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.getServiceAdminDetail(serviceId);
+  }
+
+  @Get('services/:id')
+  getService(@Param('id') serviceId: string): Promise<Record<string, unknown>> {
+    return this.adminService.getService(serviceId);
   }
 
   @Get('visibility-labels')
@@ -124,8 +222,28 @@ export class AdminController {
     return this.adminService.unassignVisibilityLabel(user.sub, labelId, dto);
   }
 
+  @Get('sponsored-visibility')
+  listSponsoredVisibility(): Promise<Record<string, unknown>> {
+    return this.adminService.listSponsoredVisibility();
+  }
+
+  @Post('sponsored-visibility')
+  createSponsoredVisibility(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Body() dto: CreateSponsoredVisibilityDto,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.createSponsoredVisibility(user.sub, dto);
+  }
+
+  @Get('activity')
+  listActivity(
+    @Query() query: ListAdminActivityDto,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.listActivity(query);
+  }
+
   @Get('analytics/overview')
-  getAnalyticsOverview(): Promise<Record<string, unknown>> {
+  getAnalyticsOverview(): Promise<Array<Record<string, unknown>>> {
     return this.adminService.getAnalyticsOverview();
   }
 }

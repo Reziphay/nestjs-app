@@ -271,15 +271,18 @@ type ServiceAvailabilitySnapshot = {
 type DiscoveryEntityKind = 'service' | 'brand' | 'provider';
 type PopularityScoreMap = Map<string, number>;
 type RelevanceScoreMap = Map<string, number>;
+type DistanceScoreMap = Map<string, number>;
 
 type RankedSearchHit = {
   id: string;
-  relevanceScore: number;
+  relevanceScore: number | null;
+  distanceKm: number | null;
 };
 
 type SearchResultPage<T> = {
   records: T[];
   relevanceScores: RelevanceScoreMap | null;
+  distanceScores: DistanceScoreMap | null;
 };
 
 type GeoBounds = {
@@ -312,7 +315,7 @@ export class SearchService {
     query: SearchDiscoveryDto,
   ): Promise<Record<string, unknown>> {
     const coordinates = this.resolveRequiredCoordinates(query);
-    const page = await this.getDiscoveryServices(query, coordinates);
+    const page = await this.getDiscoveryServices(query, coordinates, true);
 
     return {
       items: page.items,
@@ -324,7 +327,7 @@ export class SearchService {
     query: SearchDiscoveryDto,
   ): Promise<Record<string, unknown>> {
     const coordinates = this.resolveCoordinates(query);
-    const page = await this.getDiscoveryProviders(query, coordinates);
+    const page = await this.getDiscoveryProviders(query, coordinates, true);
 
     return {
       items: page.items,
@@ -337,9 +340,9 @@ export class SearchService {
   ): Promise<Record<string, unknown>> {
     const coordinates = this.resolveCoordinates(query);
     const [servicesPage, brandsPage, providersPage] = await Promise.all([
-      this.getDiscoveryServices(query, coordinates),
+      this.getDiscoveryServices(query, coordinates, false),
       this.getDiscoveryBrands(query, coordinates),
-      this.getDiscoveryProviders(query, coordinates),
+      this.getDiscoveryProviders(query, coordinates, false),
     ]);
 
     return {
@@ -355,6 +358,7 @@ export class SearchService {
   private async getDiscoveryServices(
     query: SearchDiscoveryDto,
     coordinates: { lat: number; lng: number } | null,
+    forceGeoRanking: boolean,
   ): Promise<DiscoveryPage<DiscoveryItem>> {
     const now = new Date();
     const limit = query.limit ?? 10;
@@ -366,7 +370,10 @@ export class SearchService {
     const serviceSearchResult = await this.searchServices(
       query,
       this.resolveFetchTake(limit, cursorOffset, requestedAvailability ? 6 : 3),
+      coordinates,
       geoBounds,
+      sortMode,
+      forceGeoRanking,
     );
     const services = serviceSearchResult.records;
     const availabilitySnapshots = await this.buildServiceAvailabilitySnapshots(
@@ -391,6 +398,7 @@ export class SearchService {
             now,
             coordinates,
             availabilitySnapshots.get(service.id) ?? null,
+            serviceSearchResult.distanceScores?.get(service.id) ?? null,
           ),
         )
         .filter((service) =>
@@ -724,7 +732,9 @@ export class SearchService {
     const brandSearchResult = await this.searchBrands(
       query,
       this.resolveFetchTake(limit, cursorOffset, 3),
+      coordinates,
       geoBounds,
+      sortMode,
     );
     const brands = brandSearchResult.records;
     const popularityScores =
@@ -739,7 +749,14 @@ export class SearchService {
 
     const items = this.sortDiscoveryItems(
       brands
-        .map((brand) => this.serializeBrandResult(brand, now, coordinates))
+        .map((brand) =>
+          this.serializeBrandResult(
+            brand,
+            now,
+            coordinates,
+            brandSearchResult.distanceScores?.get(brand.id) ?? null,
+          ),
+        )
         .filter((brand) =>
           this.isWithinRadius(brand.distanceKm, query.radiusKm),
         ),
@@ -758,6 +775,7 @@ export class SearchService {
   private async getDiscoveryProviders(
     query: SearchDiscoveryDto,
     coordinates: { lat: number; lng: number } | null,
+    forceGeoRanking: boolean,
   ): Promise<DiscoveryPage<DiscoveryItem>> {
     const now = new Date();
     const limit = query.limit ?? 10;
@@ -768,7 +786,10 @@ export class SearchService {
     const providerSearchResult = await this.searchProviders(
       query,
       this.resolveFetchTake(limit, cursorOffset, 3),
+      coordinates,
       geoBounds,
+      sortMode,
+      forceGeoRanking,
     );
     const providers = providerSearchResult.records;
     const popularityScores =
@@ -784,7 +805,12 @@ export class SearchService {
     const items = this.sortDiscoveryItems(
       providers
         .map((provider) =>
-          this.serializeProviderResult(provider, now, coordinates),
+          this.serializeProviderResult(
+            provider,
+            now,
+            coordinates,
+            providerSearchResult.distanceScores?.get(provider.id) ?? null,
+          ),
         )
         .filter((provider) =>
           this.isWithinRadius(provider.distanceKm, query.radiusKm),
@@ -804,23 +830,36 @@ export class SearchService {
   private async searchServices(
     query: SearchDiscoveryDto,
     take: number,
+    coordinates: { lat: number; lng: number } | null,
     geoBounds: GeoBounds | null,
+    sortMode: SearchSortMode,
+    forceGeoRanking: boolean,
   ): Promise<SearchResultPage<ServiceSearchRecord>> {
     const normalizedQuery = this.normalizeSearchQuery(query.q);
     const activeVisibilityWhere = this.buildServiceActiveVisibilityWhere(query);
+    const useGeoDistanceQuery = this.shouldUseGeoDistanceQuery(
+      query,
+      coordinates,
+      sortMode,
+      forceGeoRanking,
+    );
 
     if (normalizedQuery) {
       const hits = await this.findRankedServiceHits(
         query,
         take,
         normalizedQuery,
+        coordinates,
         geoBounds,
+        sortMode,
+        forceGeoRanking,
       );
 
       if (hits.length === 0) {
         return {
           records: [],
           relevanceScores: new Map<string, number>(),
+          distanceScores: null,
         };
       }
 
@@ -836,6 +875,41 @@ export class SearchService {
       return {
         records: this.orderRecordsByHits(services, hits),
         relevanceScores: this.buildRelevanceScoreMap(hits),
+        distanceScores: this.buildDistanceScoreMap(hits),
+      };
+    }
+
+    if (useGeoDistanceQuery && coordinates) {
+      const hits = await this.findGeoServiceHits(
+        query,
+        take,
+        coordinates,
+        geoBounds,
+        sortMode,
+        forceGeoRanking,
+      );
+
+      if (hits.length === 0) {
+        return {
+          records: [],
+          relevanceScores: null,
+          distanceScores: null,
+        };
+      }
+
+      const services = await this.prisma.service.findMany({
+        where: {
+          id: {
+            in: hits.map((hit) => hit.id),
+          },
+        },
+        include: serviceSearchInclude,
+      });
+
+      return {
+        records: this.orderRecordsByHits(services, hits),
+        relevanceScores: null,
+        distanceScores: this.buildDistanceScoreMap(hits),
       };
     }
 
@@ -919,28 +993,41 @@ export class SearchService {
         },
       }),
       relevanceScores: null,
+      distanceScores: null,
     };
   }
 
   private async searchBrands(
     query: SearchDiscoveryDto,
     take: number,
+    coordinates: { lat: number; lng: number } | null,
     geoBounds: GeoBounds | null,
+    sortMode: SearchSortMode,
   ): Promise<SearchResultPage<BrandSearchRecord>> {
     const normalizedQuery = this.normalizeSearchQuery(query.q);
+    const useGeoDistanceQuery = this.shouldUseGeoDistanceQuery(
+      query,
+      coordinates,
+      sortMode,
+      false,
+    );
 
     if (normalizedQuery) {
       const hits = await this.findRankedBrandHits(
         query,
         take,
         normalizedQuery,
+        coordinates,
         geoBounds,
+        sortMode,
+        false,
       );
 
       if (hits.length === 0) {
         return {
           records: [],
           relevanceScores: new Map<string, number>(),
+          distanceScores: null,
         };
       }
 
@@ -956,6 +1043,40 @@ export class SearchService {
       return {
         records: this.orderRecordsByHits(brands, hits),
         relevanceScores: this.buildRelevanceScoreMap(hits),
+        distanceScores: this.buildDistanceScoreMap(hits),
+      };
+    }
+
+    if (useGeoDistanceQuery && coordinates) {
+      const hits = await this.findGeoBrandHits(
+        query,
+        take,
+        coordinates,
+        geoBounds,
+        sortMode,
+      );
+
+      if (hits.length === 0) {
+        return {
+          records: [],
+          relevanceScores: null,
+          distanceScores: null,
+        };
+      }
+
+      const brands = await this.prisma.brand.findMany({
+        where: {
+          id: {
+            in: hits.map((hit) => hit.id),
+          },
+        },
+        include: brandSearchInclude,
+      });
+
+      return {
+        records: this.orderRecordsByHits(brands, hits),
+        relevanceScores: null,
+        distanceScores: this.buildDistanceScoreMap(hits),
       };
     }
 
@@ -1040,28 +1161,42 @@ export class SearchService {
         },
       }),
       relevanceScores: null,
+      distanceScores: null,
     };
   }
 
   private async searchProviders(
     query: SearchDiscoveryDto,
     take: number,
+    coordinates: { lat: number; lng: number } | null,
     geoBounds: GeoBounds | null,
+    sortMode: SearchSortMode,
+    forceGeoRanking: boolean,
   ): Promise<SearchResultPage<ProviderSearchRecord>> {
     const normalizedQuery = this.normalizeSearchQuery(query.q);
+    const useGeoDistanceQuery = this.shouldUseGeoDistanceQuery(
+      query,
+      coordinates,
+      sortMode,
+      forceGeoRanking,
+    );
 
     if (normalizedQuery) {
       const hits = await this.findRankedProviderHits(
         query,
         take,
         normalizedQuery,
+        coordinates,
         geoBounds,
+        sortMode,
+        forceGeoRanking,
       );
 
       if (hits.length === 0) {
         return {
           records: [],
           relevanceScores: new Map<string, number>(),
+          distanceScores: null,
         };
       }
 
@@ -1077,6 +1212,41 @@ export class SearchService {
       return {
         records: this.orderRecordsByHits(providers, hits),
         relevanceScores: this.buildRelevanceScoreMap(hits),
+        distanceScores: this.buildDistanceScoreMap(hits),
+      };
+    }
+
+    if (useGeoDistanceQuery && coordinates) {
+      const hits = await this.findGeoProviderHits(
+        query,
+        take,
+        coordinates,
+        geoBounds,
+        sortMode,
+        forceGeoRanking,
+      );
+
+      if (hits.length === 0) {
+        return {
+          records: [],
+          relevanceScores: null,
+          distanceScores: null,
+        };
+      }
+
+      const providers = await this.prisma.user.findMany({
+        where: {
+          id: {
+            in: hits.map((hit) => hit.id),
+          },
+        },
+        include: providerSearchInclude,
+      });
+
+      return {
+        records: this.orderRecordsByHits(providers, hits),
+        relevanceScores: null,
+        distanceScores: this.buildDistanceScoreMap(hits),
       };
     }
 
@@ -1277,6 +1447,7 @@ export class SearchService {
         },
       }),
       relevanceScores: null,
+      distanceScores: null,
     };
   }
 
@@ -1284,11 +1455,21 @@ export class SearchService {
     query: SearchDiscoveryDto,
     take: number,
     normalizedQuery: string,
+    coordinates: { lat: number; lng: number } | null,
     geoBounds: GeoBounds | null,
+    sortMode: SearchSortMode,
+    forceGeoRanking: boolean,
   ): Promise<RankedSearchHit[]> {
     const now = new Date();
     const tsQuery = Prisma.sql`websearch_to_tsquery('simple', ${normalizedQuery})`;
     const documentVector = Prisma.sql`to_tsvector('simple', coalesce(ssd.search_text, ''))`;
+    const exactDistanceKm = coordinates
+      ? this.buildExactDistanceKmSql(
+          Prisma.sql`sa.lat`,
+          Prisma.sql`sa.lng`,
+          coordinates,
+        )
+      : Prisma.sql`null`;
     const relevanceScore = Prisma.sql`
       (
         CASE
@@ -1378,8 +1559,20 @@ export class SearchService {
     if (geoBounds) {
       whereConditions.push(
         Prisma.sql`
-          sa.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
+          sa.lat is not null
+          and sa.lng is not null
+          and sa.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
           and sa.lng between ${geoBounds.minLng} and ${geoBounds.maxLng}
+        `,
+      );
+    }
+
+    if (coordinates && query.radiusKm !== undefined) {
+      whereConditions.push(
+        Prisma.sql`
+          sa.lat is not null
+          and sa.lng is not null
+          and ${exactDistanceKm} <= ${query.radiusKm}
         `,
       );
     }
@@ -1402,23 +1595,170 @@ export class SearchService {
     }
 
     const rows = await this.prisma.$queryRaw<
-      Array<{ id: string; relevance_score: number }>
+      Array<{
+        id: string;
+        relevance_score: number;
+        exact_distance_km: number | null;
+      }>
     >(Prisma.sql`
       select
         s.id,
-        ${relevanceScore} as relevance_score
+        ${relevanceScore} as relevance_score,
+        ${exactDistanceKm} as exact_distance_km
       from services s
       join service_search_documents ssd on ssd.service_id = s.id
       left join service_addresses sa on sa.id = s.address_id
       join users u on u.id = s.owner_user_id
       where ${Prisma.join(whereConditions, ' and ')}
-      order by relevance_score desc, s.created_at desc
+      order by
+        ${this.buildRankedGeoOrderBy(
+          sortMode,
+          forceGeoRanking,
+          coordinates,
+          Prisma.sql`relevance_score desc`,
+          Prisma.sql`exact_distance_km asc nulls last`,
+        )},
+        s.created_at desc,
+        s.id asc
       limit ${take}
     `);
 
     return rows.map((row) => ({
       id: row.id,
       relevanceScore: Number(row.relevance_score),
+      distanceKm:
+        row.exact_distance_km == null ? null : Number(row.exact_distance_km),
+    }));
+  }
+
+  private async findGeoServiceHits(
+    query: SearchDiscoveryDto,
+    take: number,
+    coordinates: { lat: number; lng: number },
+    geoBounds: GeoBounds | null,
+    sortMode: SearchSortMode,
+    forceGeoRanking: boolean,
+  ): Promise<RankedSearchHit[]> {
+    const now = new Date();
+    const exactDistanceKm = this.buildExactDistanceKmSql(
+      Prisma.sql`sa.lat`,
+      Prisma.sql`sa.lng`,
+      coordinates,
+    );
+    const whereConditions: Prisma.Sql[] = [
+      Prisma.sql`s.is_active = true`,
+      Prisma.sql`u.status::text = ${UserStatus.ACTIVE}`,
+      Prisma.sql`sa.lat is not null`,
+      Prisma.sql`sa.lng is not null`,
+    ];
+
+    if (query.brandId) {
+      whereConditions.push(Prisma.sql`s.brand_id = ${query.brandId}::uuid`);
+    }
+
+    if (query.categoryId) {
+      whereConditions.push(
+        Prisma.sql`s.category_id = ${query.categoryId}::uuid`,
+      );
+    }
+
+    if (query.ownerUserId) {
+      whereConditions.push(
+        Prisma.sql`s.owner_user_id = ${query.ownerUserId}::uuid`,
+      );
+    }
+
+    if (query.serviceType) {
+      whereConditions.push(
+        Prisma.sql`s.service_type::text = ${query.serviceType}`,
+      );
+    }
+
+    if (query.approvalMode) {
+      whereConditions.push(
+        Prisma.sql`s.approval_mode::text = ${query.approvalMode}`,
+      );
+    }
+
+    if (query.minPriceAmount !== undefined) {
+      whereConditions.push(
+        Prisma.sql`s.price_amount >= ${new Prisma.Decimal(query.minPriceAmount)}`,
+      );
+    }
+
+    if (query.maxPriceAmount !== undefined) {
+      whereConditions.push(
+        Prisma.sql`s.price_amount <= ${new Prisma.Decimal(query.maxPriceAmount)}`,
+      );
+    }
+
+    if (query.city) {
+      whereConditions.push(
+        Prisma.sql`lower(coalesce(sa.city, '')) = lower(${query.city})`,
+      );
+    }
+
+    if (query.country) {
+      whereConditions.push(
+        Prisma.sql`lower(coalesce(sa.country, '')) = lower(${query.country})`,
+      );
+    }
+
+    if (geoBounds) {
+      whereConditions.push(
+        Prisma.sql`
+          sa.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
+          and sa.lng between ${geoBounds.minLng} and ${geoBounds.maxLng}
+        `,
+      );
+    }
+
+    if (query.radiusKm !== undefined) {
+      whereConditions.push(Prisma.sql`${exactDistanceKm} <= ${query.radiusKm}`);
+    }
+
+    if (query.visibilityLabelSlug) {
+      whereConditions.push(
+        Prisma.sql`
+          exists (
+            select 1
+            from service_visibility_assignments sva
+            join visibility_labels vl on vl.id = sva.label_id
+            where sva.service_id = s.id
+              and vl.slug = ${query.visibilityLabelSlug.trim().toLowerCase()}
+              and vl.is_active = true
+              and sva.starts_at <= ${now}
+              and (sva.ends_at is null or sva.ends_at > ${now})
+          )
+        `,
+      );
+    }
+
+    const orderBy = this.shouldPrioritizeDistanceOrder(
+      sortMode,
+      forceGeoRanking,
+    )
+      ? Prisma.sql`exact_distance_km asc nulls last`
+      : Prisma.sql`s.created_at desc`;
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{ id: string; exact_distance_km: number }>
+    >(Prisma.sql`
+      select
+        s.id,
+        ${exactDistanceKm} as exact_distance_km
+      from services s
+      join service_addresses sa on sa.id = s.address_id
+      join users u on u.id = s.owner_user_id
+      where ${Prisma.join(whereConditions, ' and ')}
+      order by ${orderBy}, s.id asc
+      limit ${take}
+    `);
+
+    return rows.map((row) => ({
+      id: row.id,
+      relevanceScore: null,
+      distanceKm: Number(row.exact_distance_km),
     }));
   }
 
@@ -1426,11 +1766,21 @@ export class SearchService {
     query: SearchDiscoveryDto,
     take: number,
     normalizedQuery: string,
+    coordinates: { lat: number; lng: number } | null,
     geoBounds: GeoBounds | null,
+    sortMode: SearchSortMode,
+    forceGeoRanking: boolean,
   ): Promise<RankedSearchHit[]> {
     const now = new Date();
     const tsQuery = Prisma.sql`websearch_to_tsquery('simple', ${normalizedQuery})`;
     const documentVector = Prisma.sql`to_tsvector('simple', coalesce(bsd.search_text, ''))`;
+    const exactDistanceKm = coordinates
+      ? this.buildExactDistanceKmSql(
+          Prisma.sql`ba.lat`,
+          Prisma.sql`ba.lng`,
+          coordinates,
+        )
+      : Prisma.sql`null`;
     const relevanceScore = Prisma.sql`
       (
         CASE
@@ -1485,8 +1835,20 @@ export class SearchService {
     if (geoBounds) {
       whereConditions.push(
         Prisma.sql`
-          ba.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
+          ba.lat is not null
+          and ba.lng is not null
+          and ba.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
           and ba.lng between ${geoBounds.minLng} and ${geoBounds.maxLng}
+        `,
+      );
+    }
+
+    if (coordinates && query.radiusKm !== undefined) {
+      whereConditions.push(
+        Prisma.sql`
+          ba.lat is not null
+          and ba.lng is not null
+          and ${exactDistanceKm} <= ${query.radiusKm}
         `,
       );
     }
@@ -1509,24 +1871,138 @@ export class SearchService {
     }
 
     const rows = await this.prisma.$queryRaw<
-      Array<{ id: string; relevance_score: number }>
+      Array<{
+        id: string;
+        relevance_score: number;
+        exact_distance_km: number | null;
+      }>
     >(Prisma.sql`
       select
         b.id,
-        ${relevanceScore} as relevance_score
+        ${relevanceScore} as relevance_score,
+        ${exactDistanceKm} as exact_distance_km
       from brands b
       join brand_search_documents bsd on bsd.brand_id = b.id
       left join brand_addresses ba
         on ba.brand_id = b.id
        and ba.is_primary = true
       where ${Prisma.join(whereConditions, ' and ')}
-      order by relevance_score desc, b.created_at desc
+      order by
+        ${this.buildRankedGeoOrderBy(
+          sortMode,
+          forceGeoRanking,
+          coordinates,
+          Prisma.sql`relevance_score desc`,
+          Prisma.sql`exact_distance_km asc nulls last`,
+        )},
+        b.created_at desc,
+        b.id asc
       limit ${take}
     `);
 
     return rows.map((row) => ({
       id: row.id,
       relevanceScore: Number(row.relevance_score),
+      distanceKm:
+        row.exact_distance_km == null ? null : Number(row.exact_distance_km),
+    }));
+  }
+
+  private async findGeoBrandHits(
+    query: SearchDiscoveryDto,
+    take: number,
+    coordinates: { lat: number; lng: number },
+    geoBounds: GeoBounds | null,
+    sortMode: SearchSortMode,
+  ): Promise<RankedSearchHit[]> {
+    const now = new Date();
+    const exactDistanceKm = this.buildExactDistanceKmSql(
+      Prisma.sql`ba.lat`,
+      Prisma.sql`ba.lng`,
+      coordinates,
+    );
+    const whereConditions: Prisma.Sql[] = [
+      Prisma.sql`b.status::text = ${BrandStatus.ACTIVE}`,
+      Prisma.sql`ba.is_primary = true`,
+      Prisma.sql`ba.lat is not null`,
+      Prisma.sql`ba.lng is not null`,
+    ];
+
+    if (query.brandId) {
+      whereConditions.push(Prisma.sql`b.id = ${query.brandId}::uuid`);
+    }
+
+    if (query.ownerUserId) {
+      whereConditions.push(
+        Prisma.sql`b.owner_user_id = ${query.ownerUserId}::uuid`,
+      );
+    }
+
+    if (query.city) {
+      whereConditions.push(
+        Prisma.sql`lower(coalesce(ba.city, '')) = lower(${query.city})`,
+      );
+    }
+
+    if (query.country) {
+      whereConditions.push(
+        Prisma.sql`lower(coalesce(ba.country, '')) = lower(${query.country})`,
+      );
+    }
+
+    if (geoBounds) {
+      whereConditions.push(
+        Prisma.sql`
+          ba.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
+          and ba.lng between ${geoBounds.minLng} and ${geoBounds.maxLng}
+        `,
+      );
+    }
+
+    if (query.radiusKm !== undefined) {
+      whereConditions.push(Prisma.sql`${exactDistanceKm} <= ${query.radiusKm}`);
+    }
+
+    if (query.visibilityLabelSlug) {
+      whereConditions.push(
+        Prisma.sql`
+          exists (
+            select 1
+            from brand_visibility_assignments bva
+            join visibility_labels vl on vl.id = bva.label_id
+            where bva.brand_id = b.id
+              and vl.slug = ${query.visibilityLabelSlug.trim().toLowerCase()}
+              and vl.is_active = true
+              and bva.starts_at <= ${now}
+              and (bva.ends_at is null or bva.ends_at > ${now})
+          )
+        `,
+      );
+    }
+
+    const orderBy = this.shouldPrioritizeDistanceOrder(sortMode, false)
+      ? Prisma.sql`exact_distance_km asc nulls last`
+      : Prisma.sql`b.created_at desc`;
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{ id: string; exact_distance_km: number }>
+    >(Prisma.sql`
+      select
+        b.id,
+        ${exactDistanceKm} as exact_distance_km
+      from brands b
+      join brand_addresses ba
+        on ba.brand_id = b.id
+       and ba.is_primary = true
+      where ${Prisma.join(whereConditions, ' and ')}
+      order by ${orderBy}, b.id asc
+      limit ${take}
+    `);
+
+    return rows.map((row) => ({
+      id: row.id,
+      relevanceScore: null,
+      distanceKm: Number(row.exact_distance_km),
     }));
   }
 
@@ -1534,11 +2010,17 @@ export class SearchService {
     query: SearchDiscoveryDto,
     take: number,
     normalizedQuery: string,
+    coordinates: { lat: number; lng: number } | null,
     geoBounds: GeoBounds | null,
+    sortMode: SearchSortMode,
+    forceGeoRanking: boolean,
   ): Promise<RankedSearchHit[]> {
     const now = new Date();
     const tsQuery = Prisma.sql`websearch_to_tsquery('simple', ${normalizedQuery})`;
     const documentVector = Prisma.sql`to_tsvector('simple', coalesce(psd.search_text, ''))`;
+    const exactDistanceKm = coordinates
+      ? this.buildProviderExactDistanceKmSql(coordinates)
+      : Prisma.sql`null`;
     const relevanceScore = Prisma.sql`
       (
         CASE
@@ -1726,6 +2208,12 @@ export class SearchService {
       );
     }
 
+    if (coordinates && query.radiusKm !== undefined) {
+      whereConditions.push(
+        Prisma.sql`${exactDistanceKm} is not null and ${exactDistanceKm} <= ${query.radiusKm}`,
+      );
+    }
+
     if (query.visibilityLabelSlug) {
       whereConditions.push(
         Prisma.sql`
@@ -1744,21 +2232,255 @@ export class SearchService {
     }
 
     const rows = await this.prisma.$queryRaw<
-      Array<{ id: string; relevance_score: number }>
+      Array<{
+        id: string;
+        relevance_score: number;
+        exact_distance_km: number | null;
+      }>
     >(Prisma.sql`
       select
         u.id,
-        ${relevanceScore} as relevance_score
+        ${relevanceScore} as relevance_score,
+        ${exactDistanceKm} as exact_distance_km
       from users u
       join provider_search_documents psd on psd.user_id = u.id
       where ${Prisma.join(whereConditions, ' and ')}
-      order by relevance_score desc, u.created_at desc
+      order by
+        ${this.buildRankedGeoOrderBy(
+          sortMode,
+          forceGeoRanking,
+          coordinates,
+          Prisma.sql`relevance_score desc`,
+          Prisma.sql`exact_distance_km asc nulls last`,
+        )},
+        u.created_at desc,
+        u.id asc
       limit ${take}
     `);
 
     return rows.map((row) => ({
       id: row.id,
       relevanceScore: Number(row.relevance_score),
+      distanceKm:
+        row.exact_distance_km == null ? null : Number(row.exact_distance_km),
+    }));
+  }
+
+  private async findGeoProviderHits(
+    query: SearchDiscoveryDto,
+    take: number,
+    coordinates: { lat: number; lng: number },
+    geoBounds: GeoBounds | null,
+    sortMode: SearchSortMode,
+    forceGeoRanking: boolean,
+  ): Promise<RankedSearchHit[]> {
+    const now = new Date();
+    const exactDistanceKm = this.buildProviderExactDistanceKmSql(coordinates);
+    const whereConditions: Prisma.Sql[] = [
+      Prisma.sql`u.status::text = ${UserStatus.ACTIVE}`,
+      Prisma.sql`
+        exists (
+          select 1
+          from user_roles ur
+          where ur.user_id = u.id
+            and ur.role::text = ${AppRole.USO}
+        )
+      `,
+      Prisma.sql`${exactDistanceKm} is not null`,
+    ];
+
+    if (query.ownerUserId) {
+      whereConditions.push(Prisma.sql`u.id = ${query.ownerUserId}::uuid`);
+    }
+
+    if (query.brandId) {
+      whereConditions.push(
+        Prisma.sql`
+          (
+            exists (
+              select 1
+              from brands b_filter
+              where b_filter.owner_user_id = u.id
+                and b_filter.id = ${query.brandId}::uuid
+            )
+            or exists (
+              select 1
+              from services s_filter
+              where s_filter.owner_user_id = u.id
+                and s_filter.brand_id = ${query.brandId}::uuid
+            )
+          )
+        `,
+      );
+    }
+
+    if (query.categoryId) {
+      whereConditions.push(
+        Prisma.sql`
+          exists (
+            select 1
+            from services s_filter
+            where s_filter.owner_user_id = u.id
+              and s_filter.is_active = true
+              and s_filter.category_id = ${query.categoryId}::uuid
+          )
+        `,
+      );
+    }
+
+    if (query.serviceType) {
+      whereConditions.push(
+        Prisma.sql`
+          exists (
+            select 1
+            from services s_filter
+            where s_filter.owner_user_id = u.id
+              and s_filter.is_active = true
+              and s_filter.service_type::text = ${query.serviceType}
+          )
+        `,
+      );
+    }
+
+    if (query.approvalMode) {
+      whereConditions.push(
+        Prisma.sql`
+          exists (
+            select 1
+            from services s_filter
+            where s_filter.owner_user_id = u.id
+              and s_filter.is_active = true
+              and s_filter.approval_mode::text = ${query.approvalMode}
+          )
+        `,
+      );
+    }
+
+    if (query.city || query.country) {
+      const serviceLocationConditions: Prisma.Sql[] = [
+        Prisma.sql`s_filter.is_active = true`,
+      ];
+      const brandLocationConditions: Prisma.Sql[] = [
+        Prisma.sql`ba_filter.is_primary = true`,
+      ];
+
+      if (query.city) {
+        serviceLocationConditions.push(
+          Prisma.sql`lower(coalesce(sa_filter.city, '')) = lower(${query.city})`,
+        );
+        brandLocationConditions.push(
+          Prisma.sql`lower(coalesce(ba_filter.city, '')) = lower(${query.city})`,
+        );
+      }
+
+      if (query.country) {
+        serviceLocationConditions.push(
+          Prisma.sql`lower(coalesce(sa_filter.country, '')) = lower(${query.country})`,
+        );
+        brandLocationConditions.push(
+          Prisma.sql`lower(coalesce(ba_filter.country, '')) = lower(${query.country})`,
+        );
+      }
+
+      whereConditions.push(
+        Prisma.sql`
+          (
+            exists (
+              select 1
+              from services s_filter
+              join service_addresses sa_filter
+                on sa_filter.id = s_filter.address_id
+              where s_filter.owner_user_id = u.id
+                and ${Prisma.join(serviceLocationConditions, ' and ')}
+            )
+            or exists (
+              select 1
+              from brands b_filter
+              join brand_addresses ba_filter
+                on ba_filter.brand_id = b_filter.id
+              where b_filter.owner_user_id = u.id
+                and b_filter.status::text = ${BrandStatus.ACTIVE}
+                and ${Prisma.join(brandLocationConditions, ' and ')}
+            )
+          )
+        `,
+      );
+    }
+
+    if (geoBounds) {
+      whereConditions.push(
+        Prisma.sql`
+          (
+            exists (
+              select 1
+              from services s_geo
+              join service_addresses sa_geo
+                on sa_geo.id = s_geo.address_id
+              where s_geo.owner_user_id = u.id
+                and s_geo.is_active = true
+                and sa_geo.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
+                and sa_geo.lng between ${geoBounds.minLng} and ${geoBounds.maxLng}
+            )
+            or exists (
+              select 1
+              from brands b_geo
+              join brand_addresses ba_geo
+                on ba_geo.brand_id = b_geo.id
+              where b_geo.owner_user_id = u.id
+                and b_geo.status::text = ${BrandStatus.ACTIVE}
+                and ba_geo.is_primary = true
+                and ba_geo.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
+                and ba_geo.lng between ${geoBounds.minLng} and ${geoBounds.maxLng}
+            )
+          )
+        `,
+      );
+    }
+
+    if (query.radiusKm !== undefined) {
+      whereConditions.push(Prisma.sql`${exactDistanceKm} <= ${query.radiusKm}`);
+    }
+
+    if (query.visibilityLabelSlug) {
+      whereConditions.push(
+        Prisma.sql`
+          exists (
+            select 1
+            from user_visibility_assignments uva
+            join visibility_labels vl on vl.id = uva.label_id
+            where uva.user_id = u.id
+              and vl.slug = ${query.visibilityLabelSlug.trim().toLowerCase()}
+              and vl.is_active = true
+              and uva.starts_at <= ${now}
+              and (uva.ends_at is null or uva.ends_at > ${now})
+          )
+        `,
+      );
+    }
+
+    const orderBy = this.shouldPrioritizeDistanceOrder(
+      sortMode,
+      forceGeoRanking,
+    )
+      ? Prisma.sql`exact_distance_km asc nulls last`
+      : Prisma.sql`u.created_at desc`;
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{ id: string; exact_distance_km: number }>
+    >(Prisma.sql`
+      select
+        u.id,
+        ${exactDistanceKm} as exact_distance_km
+      from users u
+      where ${Prisma.join(whereConditions, ' and ')}
+      order by ${orderBy}, u.id asc
+      limit ${take}
+    `);
+
+    return rows.map((row) => ({
+      id: row.id,
+      relevanceScore: null,
+      distanceKm: Number(row.exact_distance_km),
     }));
   }
 
@@ -1797,11 +2519,11 @@ export class SearchService {
     now: Date,
     coordinates: { lat: number; lng: number } | null,
     availability: ServiceAvailabilitySnapshot | null,
+    exactDistanceKm: number | null,
   ): DiscoveryItem {
-    const distanceKm = this.calculateAddressDistance(
-      service.address,
-      coordinates,
-    );
+    const distanceKm =
+      exactDistanceKm ??
+      this.calculateAddressDistance(service.address, coordinates);
 
     return {
       id: service.id,
@@ -1862,12 +2584,12 @@ export class SearchService {
     brand: BrandSearchRecord,
     now: Date,
     coordinates: { lat: number; lng: number } | null,
+    exactDistanceKm: number | null,
   ): DiscoveryItem {
     const primaryAddress = brand.addresses[0] ?? null;
-    const distanceKm = this.calculateAddressDistance(
-      primaryAddress,
-      coordinates,
-    );
+    const distanceKm =
+      exactDistanceKm ??
+      this.calculateAddressDistance(primaryAddress, coordinates);
 
     return {
       id: brand.id,
@@ -1907,6 +2629,7 @@ export class SearchService {
     provider: ProviderSearchRecord,
     now: Date,
     coordinates: { lat: number; lng: number } | null,
+    exactDistanceKm: number | null,
   ): DiscoveryItem {
     const candidateDistances = provider.services
       .map((service) =>
@@ -1921,8 +2644,9 @@ export class SearchService {
         ),
       )
       .filter((value): value is number => value !== null);
-    const distanceKm =
+    const calculatedDistanceKm =
       candidateDistances.length > 0 ? Math.min(...candidateDistances) : null;
+    const distanceKm = exactDistanceKm ?? calculatedDistanceKm;
 
     return {
       id: provider.id,
@@ -2203,6 +2927,103 @@ export class SearchService {
     return left.id.localeCompare(right.id);
   }
 
+  private shouldUseGeoDistanceQuery(
+    query: SearchDiscoveryDto,
+    coordinates: { lat: number; lng: number } | null,
+    sortMode: SearchSortMode,
+    forceGeoRanking: boolean,
+  ): boolean {
+    if (!coordinates) {
+      return false;
+    }
+
+    return (
+      forceGeoRanking ||
+      sortMode === SearchSortMode.PROXIMITY ||
+      query.radiusKm !== undefined
+    );
+  }
+
+  private shouldPrioritizeDistanceOrder(
+    sortMode: SearchSortMode,
+    forceGeoRanking: boolean,
+  ): boolean {
+    return (
+      forceGeoRanking ||
+      sortMode === SearchSortMode.PROXIMITY ||
+      sortMode === SearchSortMode.RELEVANCE
+    );
+  }
+
+  private buildRankedGeoOrderBy(
+    sortMode: SearchSortMode,
+    forceGeoRanking: boolean,
+    coordinates: { lat: number; lng: number } | null,
+    relevanceOrderBy: Prisma.Sql,
+    distanceOrderBy: Prisma.Sql,
+  ): Prisma.Sql {
+    if (!coordinates) {
+      return relevanceOrderBy;
+    }
+
+    return this.shouldPrioritizeDistanceOrder(sortMode, forceGeoRanking)
+      ? Prisma.sql`${distanceOrderBy}, ${relevanceOrderBy}`
+      : Prisma.sql`${relevanceOrderBy}, ${distanceOrderBy}`;
+  }
+
+  private buildExactDistanceKmSql(
+    latSql: Prisma.Sql,
+    lngSql: Prisma.Sql,
+    coordinates: { lat: number; lng: number },
+  ): Prisma.Sql {
+    return Prisma.sql`
+      case
+        when ${latSql} is null or ${lngSql} is null then null
+        else earth_distance(
+          ll_to_earth(${latSql}, ${lngSql}),
+          ll_to_earth(${coordinates.lat}, ${coordinates.lng})
+        ) / 1000.0
+      end
+    `;
+  }
+
+  private buildProviderExactDistanceKmSql(coordinates: {
+    lat: number;
+    lng: number;
+  }): Prisma.Sql {
+    return Prisma.sql`
+      (
+        select min(candidate_distance_km)
+        from (
+          select earth_distance(
+            ll_to_earth(sa_geo.lat, sa_geo.lng),
+            ll_to_earth(${coordinates.lat}, ${coordinates.lng})
+          ) / 1000.0 as candidate_distance_km
+          from services s_geo
+          join service_addresses sa_geo
+            on sa_geo.id = s_geo.address_id
+          where s_geo.owner_user_id = u.id
+            and s_geo.is_active = true
+            and sa_geo.lat is not null
+            and sa_geo.lng is not null
+          union all
+          select earth_distance(
+            ll_to_earth(ba_geo.lat, ba_geo.lng),
+            ll_to_earth(${coordinates.lat}, ${coordinates.lng})
+          ) / 1000.0 as candidate_distance_km
+          from brands b_geo
+          join brand_addresses ba_geo
+            on ba_geo.brand_id = b_geo.id
+          where b_geo.owner_user_id = u.id
+            and b_geo.status::text = ${BrandStatus.ACTIVE}
+            and ba_geo.is_primary = true
+            and ba_geo.lat is not null
+            and ba_geo.lng is not null
+        ) provider_geo_distances
+      )
+    `;
+  }
+
   private resolveCoordinates(
     query: SearchDiscoveryDto,
   ): { lat: number; lng: number } | null {
@@ -2375,7 +3196,27 @@ export class SearchService {
   private buildRelevanceScoreMap(
     hits: RankedSearchHit[],
   ): RelevanceScoreMap | null {
-    return new Map(hits.map((hit) => [hit.id, hit.relevanceScore]));
+    const entries = hits
+      .filter(
+        (hit): hit is RankedSearchHit & { relevanceScore: number } =>
+          hit.relevanceScore !== null,
+      )
+      .map((hit) => [hit.id, hit.relevanceScore] as const);
+
+    return entries.length > 0 ? new Map(entries) : null;
+  }
+
+  private buildDistanceScoreMap(
+    hits: RankedSearchHit[],
+  ): DistanceScoreMap | null {
+    const entries = hits
+      .filter(
+        (hit): hit is RankedSearchHit & { distanceKm: number } =>
+          hit.distanceKm !== null,
+      )
+      .map((hit) => [hit.id, hit.distanceKm] as const);
+
+    return entries.length > 0 ? new Map(entries) : null;
   }
 
   private orderRecordsByHits<T extends { id: string }>(

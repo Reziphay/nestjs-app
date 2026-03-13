@@ -211,6 +211,8 @@ Phase 18 introduces denormalized search documents. Services, brands, and provide
 
 Phase 19 hardens discovery pagination and geo narrowing. Discovery endpoints now accept an opaque `cursor` and return `pageInfo` metadata, pagination is stabilized with deterministic tie-breaking, and when `lat`, `lng`, and `radiusKm` are provided the search layer now narrows service/brand/provider candidates in the database before the existing in-memory ranking and serialization steps.
 
+Phase 20 adds database-native geo distance support for discovery. PostgreSQL now enables `cube` and `earthdistance`, service and brand addresses have `ll_to_earth` GiST indexes, `/api/v1/services/nearby` and `/api/v1/service-owners` now select candidates with exact SQL distance instead of only application-side sorting, and geo-aware ranked discovery now carries the SQL-computed nearest distance all the way into serialized results so provider distance is no longer inferred from the limited preview arrays.
+
 Phase 5 adds admin moderation APIs, admin audit logging, reusable visibility labels for brands/services/providers, and PostgreSQL-backed discovery search across services, brands, and provider profiles.
 
 For object storage, keep `STORAGE_DRIVER=local` for local filesystem uploads or switch to `STORAGE_DRIVER=s3` and set `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, and optionally `S3_ENDPOINT` plus `S3_FORCE_PATH_STYLE=true` for S3-compatible providers such as MinIO.

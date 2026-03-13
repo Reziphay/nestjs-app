@@ -5,12 +5,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AppRole,
   AdminAuditTargetType,
+  ApprovalMode,
+  BrandMembershipStatus,
+  BrandStatus,
   PenaltyReason,
   Prisma,
   ReportStatus,
   ReportTargetType,
   ReservationObjectionStatus,
+  ReservationStatus,
   UserStatus,
   VisibilityTargetType,
   type BrandVisibilityAssignment,
@@ -19,10 +24,20 @@ import {
   type VisibilityLabel,
 } from '@prisma/client';
 
+import {
+  isVisibilityAssignmentActive,
+  serializeActiveVisibilityLabels,
+} from '../common/utils/visibility.util';
 import { PenaltiesService } from '../penalties/penalties.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminUserActionDto } from './dto/admin-user-action.dto';
+import { CreateSponsoredVisibilityDto } from './dto/create-sponsored-visibility.dto';
+import { ListAdminActivityDto } from './dto/list-admin-activity.dto';
+import { ListAdminBrandsDto } from './dto/list-admin-brands.dto';
 import { ListAdminReservationObjectionsDto } from './dto/list-admin-reservation-objections.dto';
 import { ListAdminReportsDto } from './dto/list-admin-reports.dto';
+import { ListAdminServicesDto } from './dto/list-admin-services.dto';
+import { ListAdminUsersDto } from './dto/list-admin-users.dto';
 import { CloseUserDto, SuspendUserDto } from './dto/moderate-user.dto';
 import {
   ResolveReportDto,
@@ -144,6 +159,161 @@ type ReportTargetSummary =
       type: 'REVIEW';
     };
 
+type AnalyticsSnapshot = {
+  users: Record<string, number>;
+  brands: Record<string, number>;
+  services: {
+    total: number;
+    active: number;
+    inactive: number;
+  };
+  reservations: Record<string, number>;
+  reports: Record<string, number>;
+  reservationObjections: Record<string, number>;
+  reviews: {
+    total: number;
+  };
+  activeVisibilityAssignments: {
+    brands: number;
+    services: number;
+    users: number;
+  };
+};
+
+const activeVisibilityAssignmentInclude = {
+  where: {
+    label: {
+      isActive: true,
+    },
+  },
+  include: {
+    label: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        targetType: true,
+        priority: true,
+      },
+    },
+  },
+  orderBy: {
+    createdAt: 'desc' as const,
+  },
+};
+
+const adminUserSelect = {
+  id: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  status: true,
+  suspendedUntil: true,
+  closedReason: true,
+  createdAt: true,
+  updatedAt: true,
+  roles: {
+    select: {
+      role: true,
+    },
+  },
+  brandMemberships: {
+    where: {
+      status: BrandMembershipStatus.ACTIVE,
+    },
+    select: {
+      brandId: true,
+    },
+  },
+  services: {
+    select: {
+      id: true,
+    },
+  },
+  visibilityAssignments: activeVisibilityAssignmentInclude,
+} satisfies Prisma.UserSelect;
+
+const adminBrandSelect = {
+  id: true,
+  name: true,
+  description: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+  owner: {
+    select: {
+      id: true,
+      fullName: true,
+    },
+  },
+  memberships: {
+    where: {
+      status: BrandMembershipStatus.ACTIVE,
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          fullName: true,
+        },
+      },
+    },
+  },
+  services: {
+    select: {
+      id: true,
+      name: true,
+      approvalMode: true,
+    },
+  },
+  visibilityAssignments: activeVisibilityAssignmentInclude,
+} satisfies Prisma.BrandSelect;
+
+const adminServiceSelect = {
+  id: true,
+  name: true,
+  description: true,
+  approvalMode: true,
+  waitingTimeMinutes: true,
+  minAdvanceMinutes: true,
+  maxAdvanceMinutes: true,
+  isActive: true,
+  createdAt: true,
+  updatedAt: true,
+  ownerUser: {
+    select: {
+      id: true,
+      fullName: true,
+    },
+  },
+  brand: {
+    select: {
+      id: true,
+      name: true,
+      status: true,
+    },
+  },
+  category: {
+    select: {
+      id: true,
+      name: true,
+    },
+  },
+  visibilityAssignments: activeVisibilityAssignmentInclude,
+} satisfies Prisma.ServiceSelect;
+
+type AdminUserEntity = Prisma.UserGetPayload<{
+  select: typeof adminUserSelect;
+}>;
+
+type AdminBrandEntity = Prisma.BrandGetPayload<{
+  select: typeof adminBrandSelect;
+}>;
+
+type AdminServiceEntity = Prisma.ServiceGetPayload<{
+  select: typeof adminServiceSelect;
+}>;
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -151,30 +321,197 @@ export class AdminService {
     private readonly penaltiesService: PenaltiesService,
   ) {}
 
+  async getOverview(): Promise<Record<string, unknown>> {
+    const [snapshot, activityResponse] = await Promise.all([
+      this.getAnalyticsSnapshot(),
+      this.listActivity({
+        page: 1,
+        pageSize: 6,
+      }),
+    ]);
+
+    const activity = Array.isArray(activityResponse.items)
+      ? activityResponse.items
+      : [];
+
+    return {
+      kpis: [
+        {
+          label: 'Open reports',
+          value: String(snapshot.reports.OPEN ?? 0),
+          detail: `${snapshot.reports.UNDER_REVIEW ?? 0} currently under review`,
+        },
+        {
+          label: 'Active users',
+          value: String(snapshot.users.ACTIVE ?? 0),
+          detail: `${snapshot.users.SUSPENDED ?? 0} suspended, ${snapshot.users.CLOSED ?? 0} closed`,
+        },
+        {
+          label: 'Live services',
+          value: String(snapshot.services.active),
+          detail: `${snapshot.services.inactive} paused or inactive services`,
+        },
+        {
+          label: 'Sponsored placements',
+          value: String(snapshot.activeVisibilityAssignments.services),
+          detail: `${snapshot.activeVisibilityAssignments.brands} featured brand placements live`,
+        },
+      ],
+      activity,
+    };
+  }
+
   async listReports(
     query: ListAdminReportsDto,
   ): Promise<Record<string, unknown>> {
+    const normalizedStatus = this.normalizeAdminReportStatus(query.status);
     const reports = await this.prisma.report.findMany({
       where: {
-        ...(query.status ? { status: query.status } : {}),
+        ...(normalizedStatus ? { status: normalizedStatus } : {}),
         ...(query.targetType ? { targetType: query.targetType } : {}),
       },
       include: reportInclude,
       orderBy: {
         createdAt: 'desc',
       },
-      take: query.limit ?? 50,
     });
     const targetSummaryMap = await this.buildReportTargetSummaryMap(reports);
+    const mappedReports = reports.map((report) =>
+      this.serializeAdminReport(
+        report,
+        targetSummaryMap.get(
+          this.getReportTargetSummaryKey(report.targetType, report.targetId),
+        ) ?? null,
+      ),
+    );
+    const filteredReports = this.filterByQuery(mappedReports, query.q, [
+      'subject',
+      'reason',
+      'reporterLabel',
+      'targetType',
+      'status',
+    ]);
+
+    return this.paginateItems(filteredReports, {
+      page: query.page,
+      pageSize: query.pageSize,
+      counts: this.countByKey(filteredReports, 'status'),
+    });
+  }
+
+  async getReportDetail(reportId: string): Promise<Record<string, unknown>> {
+    const report = await this.prisma.report.findUnique({
+      where: {
+        id: reportId,
+      },
+      include: reportInclude,
+    });
+
+    if (!report) {
+      throw new NotFoundException('Report not found.');
+    }
+
+    const targetSummaryMap = await this.buildReportTargetSummaryMap([report]);
+    const serializedReport = this.serializeAdminReport(
+      report,
+      targetSummaryMap.get(
+        this.getReportTargetSummaryKey(report.targetType, report.targetId),
+      ) ?? null,
+    );
+    const detail = await this.buildReportDetailRelations(report);
 
     return {
-      items: reports.map((report) => ({
-        ...this.serializeReport(report),
-        targetSummary:
-          targetSummaryMap.get(
-            this.getReportTargetSummaryKey(report.targetType, report.targetId),
-          ) ?? null,
-      })),
+      ...serializedReport,
+      report: serializedReport,
+      ...detail,
+    };
+  }
+
+  async applyReportAction(
+    adminUserId: string,
+    reportId: string,
+    action: string,
+    dto: ResolveReportDto,
+  ): Promise<Record<string, unknown>> {
+    const normalizedAction = action.trim().toLowerCase();
+
+    if (normalizedAction === 'resolve') {
+      return this.resolveReport(adminUserId, reportId, {
+        ...dto,
+        status: ReportStatus.RESOLVED,
+      });
+    }
+
+    if (normalizedAction === 'dismiss') {
+      return this.resolveReport(adminUserId, reportId, {
+        ...dto,
+        status: ReportStatus.DISMISSED,
+      });
+    }
+
+    if (normalizedAction !== 'escalate') {
+      throw new BadRequestException('Unsupported report action.');
+    }
+
+    const report = await this.prisma.report.findUnique({
+      where: {
+        id: reportId,
+      },
+      include: reportInclude,
+    });
+
+    if (!report) {
+      throw new NotFoundException('Report not found.');
+    }
+
+    if (
+      report.status === ReportStatus.RESOLVED ||
+      report.status === ReportStatus.DISMISSED
+    ) {
+      throw new ConflictException('This report has already been finalized.');
+    }
+
+    const updatedReport = await this.prisma.$transaction(async (tx) => {
+      const escalatedReport = await tx.report.update({
+        where: {
+          id: report.id,
+        },
+        data: {
+          status: ReportStatus.UNDER_REVIEW,
+          handledByAdminId: adminUserId,
+        },
+        include: reportInclude,
+      });
+
+      await this.createAuditLog(tx, {
+        actorUserId: adminUserId,
+        action: 'REPORT_ESCALATED',
+        targetType: AdminAuditTargetType.REPORT,
+        targetId: report.id,
+        detailsJson: {
+          note: dto.note?.trim() || null,
+          previousStatus: report.status,
+          status: ReportStatus.UNDER_REVIEW,
+        },
+      });
+
+      return escalatedReport;
+    });
+
+    const targetSummaryMap = await this.buildReportTargetSummaryMap([
+      updatedReport,
+    ]);
+
+    return {
+      report: this.serializeAdminReport(
+        updatedReport,
+        targetSummaryMap.get(
+          this.getReportTargetSummaryKey(
+            updatedReport.targetType,
+            updatedReport.targetId,
+          ),
+        ) ?? null,
+      ),
     };
   }
 
@@ -453,24 +790,482 @@ export class AdminService {
     };
   }
 
-  async listVisibilityLabels(
-    query: ListVisibilityLabelsDto,
-  ): Promise<Record<string, unknown>> {
-    const labels = await this.prisma.visibilityLabel.findMany({
+  async listUsers(query: ListAdminUsersDto): Promise<Record<string, unknown>> {
+    const users = await this.prisma.user.findMany({
       where: {
-        ...(query.targetType ? { targetType: query.targetType } : {}),
-        ...(query.activeOnly ? { isActive: true } : {}),
+        ...(query.status
+          ? {
+              status: this.normalizeAdminUserStatus(query.status),
+            }
+          : {}),
+        ...(query.q
+          ? {
+              OR: [
+                {
+                  fullName: {
+                    contains: query.q,
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  email: {
+                    contains: query.q,
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  phone: {
+                    contains: query.q,
+                    mode: 'insensitive',
+                  },
+                },
+              ],
+            }
+          : {}),
       },
-      include: visibilityLabelInclude,
-      orderBy: [
-        { targetType: 'asc' },
-        { priority: 'desc' },
-        { createdAt: 'asc' },
-      ],
+      select: adminUserSelect,
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const userRecords = await this.buildUserRecords(users);
+
+    return this.paginateItems(userRecords, {
+      page: query.page,
+      pageSize: query.pageSize,
+      counts: this.countByKey(userRecords, 'state'),
+    });
+  }
+
+  async getUser(userId: string): Promise<Record<string, unknown>> {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: adminUserSelect,
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+
+    const [serializedUser] = await this.buildUserRecords([user]);
+
+    return serializedUser;
+  }
+
+  async getUserAdminDetail(userId: string): Promise<Record<string, unknown>> {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: adminUserSelect,
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+
+    const [serializedUser] = await this.buildUserRecords([user]);
+    const [brands, services, reports] = await Promise.all([
+      this.prisma.brand.findMany({
+        where: {
+          memberships: {
+            some: {
+              userId,
+              status: BrandMembershipStatus.ACTIVE,
+            },
+          },
+        },
+        select: adminBrandSelect,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+      this.prisma.service.findMany({
+        where: {
+          ownerUserId: userId,
+        },
+        select: adminServiceSelect,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+      this.prisma.report.findMany({
+        where: {
+          targetType: ReportTargetType.USER,
+          targetId: userId,
+        },
+        include: reportInclude,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+    ]);
+
+    const [serializedBrands, serializedServices] = await Promise.all([
+      this.buildBrandRecords(brands),
+      this.buildServiceRecords(services),
+    ]);
+    const reportSummaryMap = await this.buildReportTargetSummaryMap(reports);
+
+    return {
+      user: serializedUser,
+      relatedBrands: serializedBrands,
+      relatedServices: serializedServices,
+      relatedReports: reports.map((report) =>
+        this.serializeAdminReport(
+          report,
+          reportSummaryMap.get(
+            this.getReportTargetSummaryKey(report.targetType, report.targetId),
+          ) ?? null,
+        ),
+      ),
+    };
+  }
+
+  async applyUserAction(
+    adminUserId: string,
+    targetUserId: string,
+    action: string,
+    dto: AdminUserActionDto,
+  ): Promise<Record<string, unknown>> {
+    const normalizedAction = action.trim().toLowerCase();
+
+    if (normalizedAction === 'suspend') {
+      return this.suspendUser(adminUserId, targetUserId, {
+        durationDays: dto.durationDays ?? 30,
+        reason: dto.reason?.trim() || 'Administrative suspension.',
+      });
+    }
+
+    if (normalizedAction === 'close') {
+      return this.closeUser(adminUserId, targetUserId, {
+        reason: dto.reason?.trim() || 'Administrative closure.',
+      });
+    }
+
+    if (normalizedAction !== 'reopen') {
+      throw new BadRequestException('Unsupported user action.');
+    }
+
+    await this.assertModeratableUser(adminUserId, targetUserId);
+    const now = new Date();
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
+        where: {
+          id: targetUserId,
+        },
+        data: {
+          status: UserStatus.ACTIVE,
+          suspendedUntil: null,
+          closedReason: null,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          phone: true,
+          status: true,
+          suspendedUntil: true,
+          closedReason: true,
+          updatedAt: true,
+        },
+      });
+
+      await this.createAuditLog(tx, {
+        actorUserId: adminUserId,
+        action: 'USER_REOPENED',
+        targetType: AdminAuditTargetType.USER,
+        targetId: targetUserId,
+        detailsJson: {
+          reason: dto.reason?.trim() || null,
+          reopenedAt: now,
+        },
+      });
+
+      return updatedUser;
     });
 
     return {
-      items: labels.map((label) => this.serializeVisibilityLabel(label)),
+      user,
+    };
+  }
+
+  async listBrands(query: ListAdminBrandsDto): Promise<Record<string, unknown>> {
+    const brands = await this.prisma.brand.findMany({
+      where: {
+        ...(query.q
+          ? {
+              OR: [
+                {
+                  name: {
+                    contains: query.q,
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  owner: {
+                    fullName: {
+                      contains: query.q,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+              ],
+            }
+          : {}),
+      },
+      select: adminBrandSelect,
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const brandRecords = await this.buildBrandRecords(brands);
+    const filteredRecords =
+      query.status === undefined
+        ? brandRecords
+        : brandRecords.filter((brand) => brand.status === query.status);
+
+    return this.paginateItems(filteredRecords, {
+      page: query.page,
+      pageSize: query.pageSize,
+      counts: this.countByKey(brandRecords, 'status'),
+    });
+  }
+
+  async getBrand(brandId: string): Promise<Record<string, unknown>> {
+    const brand = await this.prisma.brand.findUnique({
+      where: {
+        id: brandId,
+      },
+      select: adminBrandSelect,
+    });
+
+    if (!brand) {
+      throw new NotFoundException('Brand not found.');
+    }
+
+    const [serializedBrand] = await this.buildBrandRecords([brand]);
+
+    return serializedBrand;
+  }
+
+  async getBrandAdminDetail(brandId: string): Promise<Record<string, unknown>> {
+    const brand = await this.prisma.brand.findUnique({
+      where: {
+        id: brandId,
+      },
+      select: adminBrandSelect,
+    });
+
+    if (!brand) {
+      throw new NotFoundException('Brand not found.');
+    }
+
+    const [serializedBrand] = await this.buildBrandRecords([brand]);
+    const [services, reports] = await Promise.all([
+      this.prisma.service.findMany({
+        where: {
+          brandId,
+        },
+        select: adminServiceSelect,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+      this.prisma.report.findMany({
+        where: {
+          targetType: ReportTargetType.BRAND,
+          targetId: brandId,
+        },
+        include: reportInclude,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+    ]);
+    const [serializedServices, reportSummaryMap] = await Promise.all([
+      this.buildServiceRecords(services),
+      this.buildReportTargetSummaryMap(reports),
+    ]);
+
+    return {
+      brand: serializedBrand,
+      relatedServices: serializedServices,
+      relatedReports: reports.map((report) =>
+        this.serializeAdminReport(
+          report,
+          reportSummaryMap.get(
+            this.getReportTargetSummaryKey(report.targetType, report.targetId),
+          ) ?? null,
+        ),
+      ),
+    };
+  }
+
+  async listServices(
+    query: ListAdminServicesDto,
+  ): Promise<Record<string, unknown>> {
+    const services = await this.prisma.service.findMany({
+      where: {
+        ...(query.q
+          ? {
+              OR: [
+                {
+                  name: {
+                    contains: query.q,
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  ownerUser: {
+                    fullName: {
+                      contains: query.q,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+                {
+                  brand: {
+                    name: {
+                      contains: query.q,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+              ],
+            }
+          : {}),
+      },
+      select: adminServiceSelect,
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const serviceRecords = await this.buildServiceRecords(services);
+    const filteredRecords =
+      query.status === undefined
+        ? serviceRecords
+        : serviceRecords.filter((service) => service.status === query.status);
+
+    return this.paginateItems(filteredRecords, {
+      page: query.page,
+      pageSize: query.pageSize,
+      counts: this.countByKey(serviceRecords, 'status'),
+    });
+  }
+
+  async getService(serviceId: string): Promise<Record<string, unknown>> {
+    const service = await this.prisma.service.findUnique({
+      where: {
+        id: serviceId,
+      },
+      select: adminServiceSelect,
+    });
+
+    if (!service) {
+      throw new NotFoundException('Service not found.');
+    }
+
+    const [serializedService] = await this.buildServiceRecords([service]);
+
+    return serializedService;
+  }
+
+  async getServiceAdminDetail(
+    serviceId: string,
+  ): Promise<Record<string, unknown>> {
+    const service = await this.prisma.service.findUnique({
+      where: {
+        id: serviceId,
+      },
+      select: adminServiceSelect,
+    });
+
+    if (!service) {
+      throw new NotFoundException('Service not found.');
+    }
+
+    const [serializedService, reports, providerRecord, brandRecord] =
+      await Promise.all([
+        this.buildServiceRecords([service]).then((records) => records[0]),
+        this.prisma.report.findMany({
+          where: {
+            targetType: ReportTargetType.SERVICE,
+            targetId: serviceId,
+          },
+          include: reportInclude,
+          orderBy: {
+            createdAt: 'desc',
+          },
+        }),
+        this.prisma.user.findUnique({
+          where: {
+            id: service.ownerUser.id,
+          },
+          select: adminUserSelect,
+        }),
+        service.brand
+          ? this.prisma.brand.findUnique({
+              where: {
+                id: service.brand.id,
+              },
+              select: adminBrandSelect,
+            })
+          : Promise.resolve(null),
+      ]);
+
+    const [serializedProvider] = providerRecord
+      ? await this.buildUserRecords([providerRecord])
+      : [null];
+    const [serializedBrand] = brandRecord
+      ? await this.buildBrandRecords([brandRecord])
+      : [null];
+    const reportSummaryMap = await this.buildReportTargetSummaryMap(reports);
+
+    return {
+      service: serializedService,
+      relatedReports: reports.map((report) =>
+        this.serializeAdminReport(
+          report,
+          reportSummaryMap.get(
+            this.getReportTargetSummaryKey(report.targetType, report.targetId),
+          ) ?? null,
+        ),
+      ),
+      provider: serializedProvider,
+      brand: serializedBrand,
+    };
+  }
+
+  async listVisibilityLabels(
+    query: ListVisibilityLabelsDto,
+  ): Promise<Record<string, unknown>> {
+    const [labels, assignments] = await Promise.all([
+      this.prisma.visibilityLabel.findMany({
+        where: {
+          ...(query.targetType ? { targetType: query.targetType } : {}),
+          ...(query.activeOnly ? { isActive: true } : {}),
+        },
+        include: visibilityLabelInclude,
+        orderBy: [
+          { targetType: 'asc' },
+          { priority: 'desc' },
+          { createdAt: 'asc' },
+        ],
+      }),
+      this.listVisibilityAssignmentsForAdmin(query),
+    ]);
+
+    return {
+      items: assignments,
+      visibilityAssignments: assignments,
+      labels: labels.map((label) => this.serializeVisibilityLabel(label)),
     };
   }
 
@@ -650,7 +1445,130 @@ export class AdminService {
     };
   }
 
-  async getAnalyticsOverview(): Promise<Record<string, unknown>> {
+  async listSponsoredVisibility(): Promise<Record<string, unknown>> {
+    const campaigns = await this.buildSponsoredVisibilityRecords();
+
+    return {
+      items: campaigns,
+      campaigns,
+    };
+  }
+
+  async createSponsoredVisibility(
+    adminUserId: string,
+    dto: CreateSponsoredVisibilityDto,
+  ): Promise<Record<string, unknown>> {
+    const targetType =
+      dto.targetType === 'brand'
+        ? VisibilityTargetType.BRAND
+        : VisibilityTargetType.SERVICE;
+    const startsAt = new Date(dto.startsAt);
+    const endsAt = new Date(dto.endsAt);
+    this.assertValidVisibilityWindow(startsAt, endsAt);
+    await this.assertVisibilityTargetExists(targetType, dto.targetId);
+
+    const label = await this.findOrCreateSponsoredLabel(adminUserId, targetType);
+    await this.assertNoOverlappingAssignment(
+      targetType,
+      label.id,
+      dto.targetId,
+      startsAt,
+      endsAt,
+    );
+
+    const assignment = await this.prisma.$transaction(async (tx) => {
+      const createdAssignment = await this.createVisibilityAssignment(tx, {
+        targetType,
+        labelId: label.id,
+        targetId: dto.targetId,
+        createdByAdminId: adminUserId,
+        startsAt,
+        endsAt,
+      });
+
+      await this.createAuditLog(tx, {
+        actorUserId: adminUserId,
+        action: 'SPONSORED_VISIBILITY_CREATED',
+        targetType: this.resolveVisibilityAssignmentAuditTarget(targetType),
+        targetId: createdAssignment.id,
+        detailsJson: {
+          campaignName: dto.campaignName.trim(),
+          note: dto.note.trim(),
+          labelId: label.id,
+          targetId: dto.targetId,
+          startsAt,
+          endsAt,
+          targetType: dto.targetType,
+        },
+      });
+
+      return createdAssignment;
+    });
+
+    const [campaign] = await this.buildSponsoredVisibilityRecords([assignment.id]);
+
+    return {
+      campaign,
+    };
+  }
+
+  async listActivity(
+    query: ListAdminActivityDto,
+  ): Promise<Record<string, unknown>> {
+    const activityRecords = await this.buildActivityRecords();
+    const filteredActivity =
+      query.category === undefined
+        ? activityRecords
+        : activityRecords.filter((item) => item.category === query.category);
+    const searchedActivity = this.filterByQuery(filteredActivity, query.q, [
+      'title',
+      'detail',
+      'actor',
+      'category',
+    ]);
+
+    return this.paginateItems(searchedActivity, {
+      page: query.page,
+      pageSize: query.pageSize,
+      counts: this.countByKey(activityRecords, 'category'),
+    });
+  }
+
+  async getAnalyticsOverview(): Promise<Array<Record<string, unknown>>> {
+    const snapshot = await this.getAnalyticsSnapshot();
+
+    return [
+      {
+        label: 'Reservations',
+        values: [
+          snapshot.reservations.PENDING ?? 0,
+          snapshot.reservations.CONFIRMED ?? 0,
+          snapshot.reservations.COMPLETED ?? 0,
+          snapshot.reservations.NO_SHOW ?? 0,
+        ],
+      },
+      {
+        label: 'Moderation',
+        values: [
+          snapshot.reports.OPEN ?? 0,
+          snapshot.reports.UNDER_REVIEW ?? 0,
+          snapshot.reports.RESOLVED ?? 0,
+          snapshot.reports.DISMISSED ?? 0,
+        ],
+      },
+      {
+        label: 'Visibility',
+        values: [
+          snapshot.activeVisibilityAssignments.brands,
+          snapshot.activeVisibilityAssignments.services,
+          snapshot.activeVisibilityAssignments.users,
+          snapshot.reviews.total,
+        ],
+      },
+    ];
+  }
+
+  private async getAnalyticsSnapshot(): Promise<AnalyticsSnapshot> {
     const now = new Date();
     const [
       userStatusCounts,
