@@ -44,4 +44,11 @@ export class NotificationsController {
   ): Promise<Record<string, unknown>> {
     return this.notificationsService.markAllRead(user.sub);
   }
+
+  @Get('unread-count')
+  getUnreadCount(
+    @CurrentUser() user: AuthenticatedRequestUser,
+  ): Promise<Record<string, unknown>> {
+    return this.notificationsService.getUnreadCount(user.sub);
+  }
 }

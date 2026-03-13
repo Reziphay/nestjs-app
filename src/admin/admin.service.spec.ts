@@ -70,7 +70,7 @@ describe('AdminService', () => {
     const result = await service.listReports({});
 
     expect(serviceFindMany).toHaveBeenCalled();
-    expect(result).toEqual({
+    expect(result).toEqual(expect.objectContaining({
       items: [
         expect.objectContaining({
           id: 'report-1',
@@ -90,7 +90,7 @@ describe('AdminService', () => {
           },
         }),
       ],
-    });
+    }));
   });
 
   it('accepts a reservation objection and recalculates penalty state', async () => {

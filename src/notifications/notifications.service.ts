@@ -97,6 +97,19 @@ export class NotificationsService {
     };
   }
 
+  async getUnreadCount(userId: string): Promise<Record<string, unknown>> {
+    const count = await this.prisma.notification.count({
+      where: {
+        userId,
+        isRead: false,
+      },
+    });
+
+    return {
+      unreadCount: count,
+    };
+  }
+
   async registerPushToken(
     userId: string,
     dto: RegisterPushTokenDto,
