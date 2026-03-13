@@ -1,5 +1,10 @@
 import { BullModule } from '@nestjs/bullmq';
-import { Module } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -9,15 +14,20 @@ import {
   authConfig,
   buildRedisOptions,
   databaseConfig,
+  geolocationConfig,
+  notificationsConfig,
   redisConfig,
   reservationConfig,
   storageConfig,
   validateEnv,
 } from './config';
 import { AdminModule } from './admin/admin.module';
+import { RequestContextService } from './common/context/request-context.service';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { RolesGuard } from './common/guards/roles.guard';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor';
+import { AppLoggerService } from './common/logger/app-logger.service';
+import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { AuthModule } from './auth/auth.module';
 import { BrandsModule } from './brands/brands.module';
 import { HealthModule } from './health/health.module';
@@ -25,8 +35,10 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PenaltiesModule } from './penalties/penalties.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
+import { ReportsModule } from './reports/reports.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { ReviewsModule } from './reviews/reviews.module';
+import { LocationsModule } from './locations/locations.module';
 import { SearchModule } from './search/search.module';
 import { ServiceCategoriesModule } from './service-categories/service-categories.module';
 import { ServicesModule } from './services/services.module';
@@ -44,6 +56,8 @@ import { UsersModule } from './users/users.module';
         appConfig,
         authConfig,
         databaseConfig,
+        geolocationConfig,
+        notificationsConfig,
         redisConfig,
         reservationConfig,
         storageConfig,
@@ -68,6 +82,8 @@ import { UsersModule } from './users/users.module';
     AdminModule,
     UsersModule,
     NotificationsModule,
+    ReportsModule,
+    LocationsModule,
     BrandsModule,
     ServiceCategoriesModule,
     ServicesModule,
@@ -79,6 +95,8 @@ import { UsersModule } from './users/users.module';
     HealthModule,
   ],
   providers: [
+    AppLoggerService,
+    RequestContextService,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
@@ -97,4 +115,11 @@ import { UsersModule } from './users/users.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestContextMiddleware).forRoutes({
+      method: RequestMethod.ALL,
+      path: '*',
+    });
+  }
+}

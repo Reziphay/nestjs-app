@@ -5,11 +5,13 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module';
+import { AppLoggerService } from './common/logger/app-logger.service';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
   });
+  app.useLogger(app.get(AppLoggerService));
 
   const configService = app.get(ConfigService);
   const apiPrefix = configService.getOrThrow<string>('app.apiPrefix');

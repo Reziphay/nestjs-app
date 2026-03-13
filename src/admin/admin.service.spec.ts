@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
 import {
+  ReportTargetType,
   ReservationObjectionStatus,
   ReservationObjectionType,
   ReservationStatus,
@@ -10,6 +11,88 @@ import {
 import { AdminService } from './admin.service';
 
 describe('AdminService', () => {
+  it('hydrates service target summaries when listing reports', async () => {
+    const reportFindMany = jest.fn().mockResolvedValue([
+      {
+        id: 'report-1',
+        targetType: ReportTargetType.SERVICE,
+        targetId: 'service-1',
+        reason: 'Misleading service info.',
+        status: 'OPEN',
+        createdAt: new Date('2026-03-13T11:00:00.000Z'),
+        resolvedAt: null,
+        reporterUser: {
+          id: 'customer-1',
+          fullName: 'Demo Customer',
+          email: 'customer@reziphay.local',
+          phone: '+10000000002',
+        },
+        handledByAdmin: null,
+      },
+    ]);
+    const serviceFindMany = jest.fn().mockResolvedValue([
+      {
+        id: 'service-1',
+        name: 'Classic Haircut',
+        isActive: true,
+        brand: {
+          id: 'brand-1',
+          name: 'Studio Reziphay',
+        },
+        ownerUser: {
+          id: 'owner-1',
+          fullName: 'Demo Owner',
+        },
+      },
+    ]);
+
+    const service = new AdminService(
+      {
+        report: {
+          findMany: reportFindMany,
+        },
+        user: {
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        brand: {
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        service: {
+          findMany: serviceFindMany,
+        },
+        review: {
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+      } as any,
+      {} as any,
+    );
+
+    const result = await service.listReports({});
+
+    expect(serviceFindMany).toHaveBeenCalled();
+    expect(result).toEqual({
+      items: [
+        expect.objectContaining({
+          id: 'report-1',
+          targetSummary: {
+            type: ReportTargetType.SERVICE,
+            id: 'service-1',
+            name: 'Classic Haircut',
+            isActive: true,
+            brand: {
+              id: 'brand-1',
+              name: 'Studio Reziphay',
+            },
+            ownerUser: {
+              id: 'owner-1',
+              fullName: 'Demo Owner',
+            },
+          },
+        }),
+      ],
+    });
+  });
+
   it('accepts a reservation objection and recalculates penalty state', async () => {
     const objectionFindUnique = jest.fn().mockResolvedValue({
       id: 'objection-1',

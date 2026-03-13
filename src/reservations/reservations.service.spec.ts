@@ -14,14 +14,35 @@ import { ReservationsService } from './reservations.service';
 
 const reservationConfig = {
   approvalTtlMinutes: 5,
+  reminderLeadMinutes: [120, 30],
   qrSecret: 'test-qr-secret',
   qrTtlMinutes: 10,
 };
 
 describe('ReservationsService', () => {
+  const notificationPreferencesService = {
+    getResolvedNotificationSettings: jest.fn().mockResolvedValue({
+      hasCustomPreferences: false,
+      upcomingAppointmentReminders: {
+        enabled: true,
+        leadMinutes: [120, 30],
+      },
+    }),
+  };
+
   beforeEach(() => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-03-13T08:00:00.000Z'));
+    notificationPreferencesService.getResolvedNotificationSettings.mockClear();
+    notificationPreferencesService.getResolvedNotificationSettings.mockResolvedValue(
+      {
+        hasCustomPreferences: false,
+        upcomingAppointmentReminders: {
+          enabled: true,
+          leadMinutes: [120, 30],
+        },
+      },
+    );
   });
 
   afterEach(() => {
@@ -110,6 +131,7 @@ describe('ReservationsService', () => {
       completionRecords: [],
     });
     const schedulePendingExpiration = jest.fn().mockResolvedValue(undefined);
+    const scheduleUpcomingReminders = jest.fn().mockResolvedValue(0);
     const notificationsService = {
       notifyReservationReceived: jest.fn().mockResolvedValue(undefined),
       notifyReservationConfirmed: jest.fn().mockResolvedValue(undefined),
@@ -147,8 +169,10 @@ describe('ReservationsService', () => {
     const service = new ReservationsService(
       prisma,
       {
+        scheduleUpcomingReminders,
         schedulePendingExpiration,
       } as any,
+      notificationPreferencesService as any,
       notificationsService as any,
       new JwtService(),
       reservationConfig as any,
@@ -317,9 +341,23 @@ describe('ReservationsService', () => {
       ),
     } as any;
 
+    const scheduleUpcomingReminders = jest.fn().mockResolvedValue(2);
+    notificationPreferencesService.getResolvedNotificationSettings.mockResolvedValue(
+      {
+        hasCustomPreferences: true,
+        upcomingAppointmentReminders: {
+          enabled: true,
+          leadMinutes: [45],
+        },
+      },
+    );
+
     const service = new ReservationsService(
       prisma,
-      {} as any,
+      {
+        scheduleUpcomingReminders,
+      } as any,
+      notificationPreferencesService as any,
       {
         notifyReservationConfirmed: jest.fn().mockResolvedValue(undefined),
       } as any,
@@ -345,6 +383,84 @@ describe('ReservationsService', () => {
         }),
       }),
     );
+    expect(scheduleUpcomingReminders).toHaveBeenCalledWith(
+      'reservation-1',
+      new Date('2026-03-16T10:00:00.000Z'),
+      [45],
+    );
+  });
+
+  it('dispatches an upcoming reminder only for the confirmed reservation time', async () => {
+    const notifyReservationReminder = jest.fn().mockResolvedValue(undefined);
+    const reservationFindUnique = jest.fn().mockResolvedValue({
+      id: 'reservation-1',
+      status: ReservationStatus.CONFIRMED,
+      requestedStartAt: new Date('2026-03-16T10:00:00.000Z'),
+      requestedEndAt: null,
+      approvalExpiresAt: null,
+      customerNote: null,
+      rejectionReason: null,
+      cancellationReason: null,
+      freeCancellationEligibleAtCancellation: null,
+      cancelledAt: null,
+      completedAt: null,
+      createdAt: new Date('2026-03-13T08:00:00.000Z'),
+      updatedAt: new Date('2026-03-13T08:00:00.000Z'),
+      service: {
+        id: 'service-1',
+        name: 'Classic Haircut',
+        approvalMode: ApprovalMode.MANUAL,
+        serviceType: ServiceType.SOLO,
+        waitingTimeMinutes: 15,
+        freeCancellationDeadlineMinutes: 120,
+        priceAmount: 25,
+        priceCurrency: 'AZN',
+        isActive: true,
+      },
+      brand: null,
+      customerUser: {
+        id: 'customer-1',
+        fullName: 'Demo Customer',
+        phone: '+10000000002',
+      },
+      serviceOwnerUser: {
+        id: 'owner-1',
+        fullName: 'Demo Owner',
+        phone: '+10000000003',
+      },
+      changeRequests: [],
+      statusHistory: [],
+      completionRecords: [],
+    });
+
+    const service = new ReservationsService(
+      {
+        reservation: {
+          findUnique: reservationFindUnique,
+        },
+      } as any,
+      {} as any,
+      notificationPreferencesService as any,
+      {
+        notifyReservationReminder,
+      } as any,
+      new JwtService(),
+      reservationConfig as any,
+    );
+
+    await service.sendUpcomingReminder(
+      'reservation-1',
+      30,
+      '2026-03-16T10:00:00.000Z',
+    );
+
+    expect(notifyReservationReminder).toHaveBeenCalledWith({
+      reservationId: 'reservation-1',
+      recipientUserIds: ['customer-1', 'owner-1'],
+      serviceName: 'Classic Haircut',
+      startsAt: new Date('2026-03-16T10:00:00.000Z'),
+      leadMinutes: 30,
+    });
   });
 
   it('completes a confirmed reservation by signed QR payload', async () => {
@@ -471,11 +587,17 @@ describe('ReservationsService', () => {
       ),
     } as any;
 
+    const cancelUpcomingReminders = jest.fn().mockResolvedValue(undefined);
+    const notifyReservationCompleted = jest.fn().mockResolvedValue(undefined);
+
     const service = new ReservationsService(
       prisma,
-      {} as any,
       {
-        notifyReservationCompleted: jest.fn().mockResolvedValue(undefined),
+        cancelUpcomingReminders,
+      } as any,
+      notificationPreferencesService as any,
+      {
+        notifyReservationCompleted,
       } as any,
       jwtService,
       reservationConfig as any,
@@ -501,6 +623,8 @@ describe('ReservationsService', () => {
         }),
       }),
     );
+    expect(cancelUpcomingReminders).toHaveBeenCalledWith('reservation-1');
+    expect(notifyReservationCompleted).toHaveBeenCalled();
   });
 
   it('expires a timed-out manual reservation idempotently', async () => {
@@ -545,6 +669,7 @@ describe('ReservationsService', () => {
     const service = new ReservationsService(
       prisma,
       {} as any,
+      notificationPreferencesService as any,
       {
         notifyReservationExpired: jest.fn().mockResolvedValue(undefined),
       } as any,

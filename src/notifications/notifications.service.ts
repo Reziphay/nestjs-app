@@ -1,8 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { AppRole, NotificationType, Prisma } from '@prisma/client';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  AppRole,
+  NotificationType,
+  Prisma,
+  ReportTargetType,
+} from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { ListNotificationsDto } from './dto/list-notifications.dto';
+import { PushDeliveryService } from './push-delivery.service';
 import { RegisterPushTokenDto } from './dto/register-push-token.dto';
 
 type NotificationInput = {
@@ -14,7 +20,12 @@ type NotificationInput = {
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(NotificationsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pushDeliveryService: PushDeliveryService,
+  ) {}
 
   async listNotifications(
     userId: string,
@@ -192,6 +203,25 @@ export class NotificationsService {
     });
   }
 
+  async notifyReservationReminder(input: {
+    reservationId: string;
+    recipientUserIds: string[];
+    serviceName: string;
+    startsAt: Date;
+    leadMinutes: number;
+  }): Promise<void> {
+    await this.createNotifications(input.recipientUserIds, {
+      type: NotificationType.RESERVATION_REMINDER,
+      title: 'Upcoming appointment',
+      body: `${input.serviceName} starts in ${this.formatReminderLeadTime(input.leadMinutes)}.`,
+      dataJson: {
+        reservationId: input.reservationId,
+        startsAt: input.startsAt.toISOString(),
+        leadMinutes: input.leadMinutes,
+      },
+    });
+  }
+
   async notifyReservationCompleted(input: {
     reservationId: string;
     recipientUserIds: string[];
@@ -271,12 +301,23 @@ export class NotificationsService {
   }
 
   async notifyReviewReported(input: { reportId: string }): Promise<void> {
+    await this.notifyReportReceived({
+      reportId: input.reportId,
+      targetType: ReportTargetType.REVIEW,
+    });
+  }
+
+  async notifyReportReceived(input: {
+    reportId: string;
+    targetType: ReportTargetType;
+  }): Promise<void> {
     await this.notifyAdmins({
-      type: NotificationType.REVIEW_REPORTED,
-      title: 'Review report received',
-      body: 'A review was reported and awaits moderation.',
+      type: NotificationType.REPORT_RECEIVED,
+      title: 'New report received',
+      body: `${this.formatReportTargetType(input.targetType)} report awaits moderation.`,
       dataJson: {
         reportId: input.reportId,
+        targetType: input.targetType,
       },
     });
   }
@@ -327,6 +368,43 @@ export class NotificationsService {
         dataJson: input.dataJson ?? Prisma.JsonNull,
       })),
     });
+
+    try {
+      const pushTokens = await this.prisma.pushToken.findMany({
+        where: {
+          userId: {
+            in: uniqueUserIds,
+          },
+        },
+        select: {
+          token: true,
+        },
+      });
+
+      const dispatchResult =
+        await this.pushDeliveryService.dispatchPushNotifications({
+          tokens: pushTokens.map((pushToken) => pushToken.token),
+          type: input.type,
+          title: input.title,
+          body: input.body,
+          dataJson: input.dataJson ?? null,
+        });
+
+      if (dispatchResult.invalidTokens.length > 0) {
+        await this.prisma.pushToken.deleteMany({
+          where: {
+            token: {
+              in: dispatchResult.invalidTokens,
+            },
+          },
+        });
+      }
+    } catch (error) {
+      this.logger.error(
+        'Push delivery failed after in-app notifications were created.',
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
   }
 
   private serializeNotification(notification: {
@@ -349,5 +427,30 @@ export class NotificationsService {
       readAt: notification.readAt,
       createdAt: notification.createdAt,
     };
+  }
+
+  private formatReminderLeadTime(leadMinutes: number): string {
+    if (leadMinutes % 60 === 0) {
+      const hours = leadMinutes / 60;
+
+      return hours === 1 ? '1 hour' : `${hours} hours`;
+    }
+
+    return leadMinutes === 1 ? '1 minute' : `${leadMinutes} minutes`;
+  }
+
+  private formatReportTargetType(targetType: ReportTargetType): string {
+    switch (targetType) {
+      case ReportTargetType.USER:
+        return 'User';
+      case ReportTargetType.BRAND:
+        return 'Brand';
+      case ReportTargetType.SERVICE:
+        return 'Service';
+      case ReportTargetType.REVIEW:
+        return 'Review';
+      default:
+        return 'New';
+    }
   }
 }

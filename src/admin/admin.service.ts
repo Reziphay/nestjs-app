@@ -109,6 +109,41 @@ type VisibilityAssignmentRecord =
   | ServiceVisibilityAssignment
   | UserVisibilityAssignment;
 
+type ReportTargetSummary =
+  | {
+      id: string;
+      fullName: string;
+      status: UserStatus;
+      type: 'USER';
+    }
+  | {
+      id: string;
+      name: string;
+      status: string;
+      type: 'BRAND';
+    }
+  | {
+      brand: {
+        id: string;
+        name: string;
+      } | null;
+      id: string;
+      isActive: boolean;
+      name: string;
+      ownerUser: {
+        id: string;
+        fullName: string;
+      };
+      type: 'SERVICE';
+    }
+  | {
+      comment: string;
+      id: string;
+      isDeleted: boolean;
+      rating: number;
+      type: 'REVIEW';
+    };
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -130,34 +165,15 @@ export class AdminService {
       },
       take: query.limit ?? 50,
     });
-
-    const reviewIds = reports
-      .filter((report) => report.targetType === ReportTargetType.REVIEW)
-      .map((report) => report.targetId);
-    const reviews = reviewIds.length
-      ? await this.prisma.review.findMany({
-          where: {
-            id: {
-              in: reviewIds,
-            },
-          },
-          select: {
-            id: true,
-            rating: true,
-            comment: true,
-            isDeleted: true,
-          },
-        })
-      : [];
-    const reviewMap = new Map(reviews.map((review) => [review.id, review]));
+    const targetSummaryMap = await this.buildReportTargetSummaryMap(reports);
 
     return {
       items: reports.map((report) => ({
         ...this.serializeReport(report),
         targetSummary:
-          report.targetType === ReportTargetType.REVIEW
-            ? (reviewMap.get(report.targetId) ?? null)
-            : null,
+          targetSummaryMap.get(
+            this.getReportTargetSummaryKey(report.targetType, report.targetId),
+          ) ?? null,
       })),
     };
   }
@@ -1144,6 +1160,157 @@ export class AdminService {
       reporterUser: report.reporterUser,
       handledByAdmin: report.handledByAdmin,
     };
+  }
+
+  private async buildReportTargetSummaryMap(
+    reports: ReportRecord[],
+  ): Promise<Map<string, ReportTargetSummary>> {
+    const userIds = reports
+      .filter((report) => report.targetType === ReportTargetType.USER)
+      .map((report) => report.targetId);
+    const brandIds = reports
+      .filter((report) => report.targetType === ReportTargetType.BRAND)
+      .map((report) => report.targetId);
+    const serviceIds = reports
+      .filter((report) => report.targetType === ReportTargetType.SERVICE)
+      .map((report) => report.targetId);
+    const reviewIds = reports
+      .filter((report) => report.targetType === ReportTargetType.REVIEW)
+      .map((report) => report.targetId);
+
+    const [users, brands, services, reviews] = await Promise.all([
+      userIds.length
+        ? this.prisma.user.findMany({
+            where: {
+              id: {
+                in: userIds,
+              },
+            },
+            select: {
+              id: true,
+              fullName: true,
+              status: true,
+            },
+          })
+        : Promise.resolve([]),
+      brandIds.length
+        ? this.prisma.brand.findMany({
+            where: {
+              id: {
+                in: brandIds,
+              },
+            },
+            select: {
+              id: true,
+              name: true,
+              status: true,
+            },
+          })
+        : Promise.resolve([]),
+      serviceIds.length
+        ? this.prisma.service.findMany({
+            where: {
+              id: {
+                in: serviceIds,
+              },
+            },
+            select: {
+              id: true,
+              name: true,
+              isActive: true,
+              brand: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+              ownerUser: {
+                select: {
+                  id: true,
+                  fullName: true,
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
+      reviewIds.length
+        ? this.prisma.review.findMany({
+            where: {
+              id: {
+                in: reviewIds,
+              },
+            },
+            select: {
+              id: true,
+              rating: true,
+              comment: true,
+              isDeleted: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const summaryEntries: Array<[string, ReportTargetSummary]> = [];
+
+    users.forEach((user) => {
+      summaryEntries.push([
+        this.getReportTargetSummaryKey(ReportTargetType.USER, user.id),
+        {
+          id: user.id,
+          fullName: user.fullName,
+          status: user.status,
+          type: 'USER',
+        },
+      ]);
+    });
+
+    brands.forEach((brand) => {
+      summaryEntries.push([
+        this.getReportTargetSummaryKey(ReportTargetType.BRAND, brand.id),
+        {
+          id: brand.id,
+          name: brand.name,
+          status: brand.status,
+          type: 'BRAND',
+        },
+      ]);
+    });
+
+    services.forEach((service) => {
+      summaryEntries.push([
+        this.getReportTargetSummaryKey(ReportTargetType.SERVICE, service.id),
+        {
+          brand: service.brand,
+          id: service.id,
+          isActive: service.isActive,
+          name: service.name,
+          ownerUser: service.ownerUser,
+          type: 'SERVICE',
+        },
+      ]);
+    });
+
+    reviews.forEach((review) => {
+      summaryEntries.push([
+        this.getReportTargetSummaryKey(ReportTargetType.REVIEW, review.id),
+        {
+          comment: review.comment,
+          id: review.id,
+          isDeleted: review.isDeleted,
+          rating: review.rating,
+          type: 'REVIEW',
+        },
+      ]);
+    });
+
+    return new Map(summaryEntries);
+  }
+
+  private getReportTargetSummaryKey(
+    targetType: ReportTargetType,
+    targetId: string,
+  ): string {
+    return `${targetType}:${targetId}`;
   }
 
   private serializeReservationObjection(

@@ -1,12 +1,13 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import { randomUUID } from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
-import { extname, join } from 'path';
+import { extname, posix } from 'path';
 import { Prisma } from '@prisma/client';
 
 import { storageConfig } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
+import { OBJECT_STORAGE_CLIENT } from './storage.constants';
+import type { ObjectStorageClient } from './storage.types';
 
 @Injectable()
 export class StorageService {
@@ -14,6 +15,8 @@ export class StorageService {
     private readonly prisma: PrismaService,
     @Inject(storageConfig.KEY)
     private readonly storageConfiguration: ConfigType<typeof storageConfig>,
+    @Inject(OBJECT_STORAGE_CLIENT)
+    private readonly objectStorageClient: ObjectStorageClient,
   ) {}
 
   async uploadFile(
@@ -25,21 +28,14 @@ export class StorageService {
       throw new BadRequestException('A file upload is required.');
     }
 
-    if (this.storageConfiguration.driver !== 'local') {
-      throw new BadRequestException(
-        'Only the local storage driver is enabled in Phase 2.',
-      );
-    }
-
-    const localDir = this.storageConfiguration.localDir;
     const extension = extname(file.originalname || '').toLowerCase();
-    const objectKey = join(namespace, `${randomUUID()}${extension}`);
-    const absolutePath = join(process.cwd(), localDir, objectKey);
+    const objectKey = posix.join(namespace, `${randomUUID()}${extension}`);
 
-    await mkdir(join(process.cwd(), localDir, namespace), {
-      recursive: true,
+    await this.objectStorageClient.uploadObject({
+      body: file.buffer,
+      contentType: file.mimetype || 'application/octet-stream',
+      objectKey,
     });
-    await writeFile(absolutePath, file.buffer);
 
     return this.prisma.fileObject.create({
       data: {

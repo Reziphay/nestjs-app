@@ -24,6 +24,7 @@ import {
 
 import { AppRole } from '../common/enums/app-role.enum';
 import type { AuthenticatedRequestUser } from '../common/types/authenticated-request-user.type';
+import { NotificationPreferencesService } from '../notification-preferences/notification-preferences.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { reservationConfig } from '../config';
@@ -197,6 +198,7 @@ export class ReservationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reservationJobsService: ReservationJobsService,
+    private readonly notificationPreferencesService: NotificationPreferencesService,
     private readonly notificationsService: NotificationsService,
     private readonly jwtService: JwtService,
     @Inject(reservationConfig.KEY)
@@ -391,6 +393,10 @@ export class ReservationsService {
       }
     }
 
+    if (reservation.status === ReservationStatus.CONFIRMED) {
+      await this.scheduleUpcomingRemindersSafely(reservation);
+    }
+
     await this.runNotificationSafely(() =>
       this.notificationsService.notifyReservationReceived({
         reservationId: reservation.id,
@@ -467,6 +473,8 @@ export class ReservationsService {
         include: reservationInclude,
       });
     });
+
+    await this.scheduleUpcomingRemindersSafely(updatedReservation);
 
     await this.runNotificationSafely(() =>
       this.notificationsService.notifyReservationConfirmed({
@@ -597,6 +605,8 @@ export class ReservationsService {
       });
     });
 
+    await this.cancelUpcomingRemindersSafely(updatedReservation.id);
+
     await this.runNotificationSafely(() =>
       this.notificationsService.notifyReservationCancelled({
         reservationId: updatedReservation.id,
@@ -656,6 +666,8 @@ export class ReservationsService {
         include: reservationInclude,
       });
     });
+
+    await this.cancelUpcomingRemindersSafely(updatedReservation.id);
 
     await this.runNotificationSafely(() =>
       this.notificationsService.notifyReservationCancelled({
@@ -880,6 +892,9 @@ export class ReservationsService {
       });
     });
 
+    await this.cancelUpcomingRemindersSafely(updatedReservation.id);
+    await this.scheduleUpcomingRemindersSafely(updatedReservation);
+
     await this.runNotificationSafely(() =>
       this.notificationsService.notifyReservationConfirmed({
         reservationId: updatedReservation.id,
@@ -958,17 +973,6 @@ export class ReservationsService {
       });
     });
 
-    await this.runNotificationSafely(() =>
-      this.notificationsService.notifyReservationCompleted({
-        reservationId: updatedReservation.id,
-        recipientUserIds: [
-          updatedReservation.customerUser.id,
-          updatedReservation.serviceOwnerUser.id,
-        ],
-        serviceName: updatedReservation.service.name,
-      }),
-    );
-
     return {
       reservation: this.serializeReservation(updatedReservation),
     };
@@ -1027,6 +1031,8 @@ export class ReservationsService {
         include: reservationInclude,
       });
     });
+
+    await this.cancelUpcomingRemindersSafely(updatedReservation.id);
 
     await this.runNotificationSafely(() =>
       this.notificationsService.notifyReservationCompleted({
@@ -1112,6 +1118,19 @@ export class ReservationsService {
       });
     });
 
+    await this.cancelUpcomingRemindersSafely(updatedReservation.id);
+
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationCompleted({
+        reservationId: updatedReservation.id,
+        recipientUserIds: [
+          updatedReservation.customerUser.id,
+          updatedReservation.serviceOwnerUser.id,
+        ],
+        serviceName: updatedReservation.service.name,
+      }),
+    );
+
     return {
       reservation: this.serializeReservation(updatedReservation),
     };
@@ -1188,6 +1207,54 @@ export class ReservationsService {
         reservationId: outcome.reservationId,
         recipientUserIds: [outcome.customerUserId, outcome.ownerUserId],
         serviceName: outcome.serviceName,
+      }),
+    );
+  }
+
+  async sendUpcomingReminder(
+    reservationId: string,
+    leadMinutes: number,
+    scheduledStartAtIso: string,
+  ): Promise<void> {
+    if (!Number.isInteger(leadMinutes) || leadMinutes < 1) {
+      this.logger.warn(
+        `Skipping reservation reminder for ${reservationId} because the lead time is invalid.`,
+      );
+      return;
+    }
+
+    const reservation = await this.prisma.reservation.findUnique({
+      where: {
+        id: reservationId,
+      },
+      include: reservationInclude,
+    });
+
+    if (!reservation || reservation.status !== ReservationStatus.CONFIRMED) {
+      return;
+    }
+
+    if (
+      scheduledStartAtIso &&
+      reservation.requestedStartAt.toISOString() !== scheduledStartAtIso
+    ) {
+      return;
+    }
+
+    if (reservation.requestedStartAt.getTime() <= Date.now()) {
+      return;
+    }
+
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationReminder({
+        reservationId: reservation.id,
+        recipientUserIds: [
+          reservation.customerUser.id,
+          reservation.serviceOwnerUser.id,
+        ],
+        serviceName: reservation.service.name,
+        startsAt: reservation.requestedStartAt,
+        leadMinutes,
       }),
     );
   }
@@ -1698,6 +1765,52 @@ export class ReservationsService {
     } catch (error) {
       this.logger.error(
         'Notification dispatch failed during reservations flow.',
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+  }
+
+  private async scheduleUpcomingRemindersSafely(
+    reservation: Pick<
+      ReservationRecord,
+      'customerUser' | 'id' | 'requestedStartAt' | 'status'
+    >,
+  ): Promise<void> {
+    if (reservation.status !== ReservationStatus.CONFIRMED) {
+      return;
+    }
+
+    try {
+      const notificationSettings =
+        await this.notificationPreferencesService.getResolvedNotificationSettings(
+          reservation.customerUser.id,
+        );
+
+      if (!notificationSettings.upcomingAppointmentReminders.enabled) {
+        return;
+      }
+
+      await this.reservationJobsService.scheduleUpcomingReminders(
+        reservation.id,
+        reservation.requestedStartAt,
+        notificationSettings.upcomingAppointmentReminders.leadMinutes,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to schedule upcoming reminders for reservation ${reservation.id}.`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+  }
+
+  private async cancelUpcomingRemindersSafely(
+    reservationId: string,
+  ): Promise<void> {
+    try {
+      await this.reservationJobsService.cancelUpcomingReminders(reservationId);
+    } catch (error) {
+      this.logger.error(
+        `Failed to cancel upcoming reminders for reservation ${reservationId}.`,
         error instanceof Error ? error.stack : undefined,
       );
     }

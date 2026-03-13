@@ -107,9 +107,13 @@ describe('ReviewsService', () => {
       ),
     } as any;
 
-    const service = new ReviewsService(prisma, {
-      notifyReviewReceived,
-    } as any);
+    const service = new ReviewsService(
+      prisma,
+      {
+        notifyReviewReceived,
+      } as any,
+      {} as any,
+    );
 
     const result = await service.createReview('customer-1', {
       reservationId: 'reservation-1',
@@ -169,7 +173,7 @@ describe('ReviewsService', () => {
       },
     } as any;
 
-    const service = new ReviewsService(prisma, {} as any);
+    const service = new ReviewsService(prisma, {} as any, {} as any);
 
     await expect(
       service.createReview('customer-1', {

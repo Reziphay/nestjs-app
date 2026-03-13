@@ -2,13 +2,16 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 
 import { AppRole } from '../common/enums/app-role.enum';
 import { AuthService } from '../auth/auth.service';
+import { NotificationPreferencesService } from '../notification-preferences/notification-preferences.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateNotificationSettingsDto } from './dto/update-notification-settings.dto';
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
+    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {}
 
   getMe(userId: string, sessionId: string): Promise<Record<string, unknown>> {
@@ -77,5 +80,19 @@ export class UsersService {
     }
 
     return this.authService.reissueTokensForSession(userId, sessionId, role);
+  }
+
+  getNotificationSettings(userId: string): Promise<Record<string, unknown>> {
+    return this.notificationPreferencesService.getNotificationSettings(userId);
+  }
+
+  updateNotificationSettings(
+    userId: string,
+    dto: UpdateNotificationSettingsDto,
+  ): Promise<Record<string, unknown>> {
+    return this.notificationPreferencesService.updateNotificationSettings(
+      userId,
+      dto,
+    );
   }
 }

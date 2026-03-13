@@ -1,7 +1,8 @@
 import { ReservationStatus } from '@prisma/client';
 
-export const RESERVATION_EXPIRATION_QUEUE = 'reservation-expiration';
+export const RESERVATION_JOBS_QUEUE = 'reservations';
 export const RESERVATION_EXPIRATION_JOB = 'expire-pending-reservation';
+export const RESERVATION_REMINDER_JOB = 'send-upcoming-reservation-reminder';
 
 export const ACTIVE_RESERVATION_STATUSES: ReservationStatus[] = [
   ReservationStatus.PENDING,

@@ -8,14 +8,13 @@ import {
 import {
   AppRole,
   Prisma,
-  ReportStatus,
-  ReportTargetType,
   ReservationStatus,
   ReviewTargetType,
 } from '@prisma/client';
 
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReportsService } from '../reports/reports.service';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { CreateReviewReplyDto } from './dto/create-review-reply.dto';
 import { ReportReviewDto } from './dto/report-review.dto';
@@ -76,6 +75,7 @@ export class ReviewsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly reportsService: ReportsService,
   ) {}
 
   async createReview(
@@ -352,65 +352,7 @@ export class ReviewsService {
     reviewId: string,
     dto: ReportReviewDto,
   ): Promise<Record<string, unknown>> {
-    const review = await this.prisma.review.findUnique({
-      where: {
-        id: reviewId,
-      },
-      select: {
-        id: true,
-        isDeleted: true,
-      },
-    });
-
-    if (!review || review.isDeleted) {
-      throw new NotFoundException('Review not found.');
-    }
-
-    const existingOpenReport = await this.prisma.report.findFirst({
-      where: {
-        reporterUserId: userId,
-        targetType: ReportTargetType.REVIEW,
-        targetId: reviewId,
-        status: {
-          in: [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW],
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    if (existingOpenReport) {
-      throw new ConflictException(
-        'You already have an open report for this review.',
-      );
-    }
-
-    const report = await this.prisma.report.create({
-      data: {
-        reporterUserId: userId,
-        targetType: ReportTargetType.REVIEW,
-        targetId: reviewId,
-        reason: dto.reason.trim(),
-      },
-    });
-
-    await this.runNotificationSafely(() =>
-      this.notificationsService.notifyReviewReported({
-        reportId: report.id,
-      }),
-    );
-
-    return {
-      report: {
-        id: report.id,
-        targetType: report.targetType,
-        targetId: report.targetId,
-        reason: report.reason,
-        status: report.status,
-        createdAt: report.createdAt,
-      },
-    };
+    return this.reportsService.createReviewReport(userId, reviewId, dto.reason);
   }
 
   private async refreshRatingStats(

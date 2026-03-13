@@ -8,4 +8,5 @@ export const storageConfig = registerAs('storage', () => ({
   region: process.env['S3_REGION'] ?? '',
   accessKey: process.env['S3_ACCESS_KEY'] ?? '',
   secretKey: process.env['S3_SECRET_KEY'] ?? '',
+  forcePathStyle: process.env['S3_FORCE_PATH_STYLE'] === 'true',
 }));

@@ -1,28 +1,30 @@
 import { BullModule } from '@nestjs/bullmq';
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 
+import { NotificationPreferencesModule } from '../notification-preferences/notification-preferences.module';
 import { NotificationsModule } from '../notifications/notifications.module';
-import { RESERVATION_EXPIRATION_QUEUE } from './reservations.constants';
-import { ReservationExpirationProcessor } from './reservation-expiration.processor';
+import { RESERVATION_JOBS_QUEUE } from './reservations.constants';
 import { ReservationJobsService } from './reservation-jobs.service';
+import { ReservationJobsProcessor } from './reservation-jobs.processor';
 import { ReservationsController } from './reservations.controller';
 import { ReservationsService } from './reservations.service';
 
 @Module({
   imports: [
     BullModule.registerQueue({
-      name: RESERVATION_EXPIRATION_QUEUE,
+      name: RESERVATION_JOBS_QUEUE,
     }),
     JwtModule.register({}),
+    forwardRef(() => NotificationPreferencesModule),
     NotificationsModule,
   ],
   controllers: [ReservationsController],
   providers: [
     ReservationsService,
     ReservationJobsService,
-    ReservationExpirationProcessor,
+    ReservationJobsProcessor,
   ],
-  exports: [ReservationsService],
+  exports: [ReservationsService, ReservationJobsService],
 })
 export class ReservationsModule {}

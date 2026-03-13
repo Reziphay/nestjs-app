@@ -152,11 +152,13 @@ enum NotificationType {
   RESERVATION_REJECTED
   RESERVATION_CANCELLED
   RESERVATION_CHANGE_REQUESTED
+  RESERVATION_REMINDER
   RESERVATION_COMPLETED
   RESERVATION_EXPIRED
   RESERVATION_NO_SHOW
   PENALTY_APPLIED
   REVIEW_RECEIVED
+  REPORT_RECEIVED
   REVIEW_REPORTED
   OBJECTION_RECEIVED
 }
@@ -223,6 +225,7 @@ model User {
   reports                             Report[]                      @relation("ReportReporter")
   handledReports                      Report[]                      @relation("ReportHandler")
   notifications                       Notification[]
+  notificationSettings                UserNotificationSettings?
   pushTokens                          PushToken[]
   serviceOwnerRatingStat              ServiceOwnerRatingStat?
   visibilityAssignments               UserVisibilityAssignment[]    @relation("VisibleUserAssignments")
@@ -236,6 +239,19 @@ model User {
   @@index([status], map: "users_status_idx")
   @@index([fullName], map: "users_full_name_idx")
   @@map("users")
+}
+
+model UserNotificationSettings {
+  id                                     String   @id @default(uuid()) @db.Uuid
+  userId                                 String   @unique @map("user_id") @db.Uuid
+  upcomingAppointmentRemindersEnabled    Boolean  @default(true) @map("upcoming_appointment_reminders_enabled")
+  upcomingAppointmentReminderLeadMinutes Int[]    @map("upcoming_appointment_reminder_lead_minutes")
+  createdAt                              DateTime @default(now()) @map("created_at")
+  updatedAt                              DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_notification_settings")
 }
 
 model UserRole {

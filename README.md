@@ -14,6 +14,10 @@ Current backend foundation for the Reziphay MVP. This app is a NestJS modular mo
 - reservations, change requests, manual approval expiration jobs, and completion flows
 - reviews, rating stats, in-app notifications, push-token registration, no-show penalties, and objections
 - admin moderation, visibility-label management, analytics, and discovery search
+- real S3-compatible uploads, real FCM push delivery support, and geolocation provider integration
+- appointment reminder jobs plus structured request and job logging with request IDs
+- persisted user notification settings for customizable appointment reminder timing
+- generic reporting for users, brands, services, and reviews with admin-ready target summaries
 
 ## Stack
 
@@ -72,7 +76,7 @@ pnpm test
 pnpm test:e2e
 ```
 
-## API surface through Phase 5
+## API surface through Phase 10
 
 - `POST /api/v1/auth/request-phone-otp`
 - `POST /api/v1/auth/verify-phone-otp`
@@ -85,6 +89,8 @@ pnpm test:e2e
 - `POST /api/v1/users/me/activate-uso`
 - `GET /api/v1/users/me/roles`
 - `POST /api/v1/users/me/switch-role`
+- `GET /api/v1/users/me/notification-settings`
+- `PATCH /api/v1/users/me/notification-settings`
 - `GET /api/v1/health`
 - `GET /api/v1/brands`
 - `POST /api/v1/brands`
@@ -130,6 +136,7 @@ pnpm test:e2e
 - `PATCH /api/v1/notifications/:id/read`
 - `POST /api/v1/notifications/read-all`
 - `POST /api/v1/push-tokens`
+- `POST /api/v1/reports`
 - `GET /api/v1/search`
 - `GET /api/v1/admin/reports`
 - `POST /api/v1/admin/reports/:id/resolve`
@@ -142,6 +149,8 @@ pnpm test:e2e
 - `POST /api/v1/admin/visibility-labels/:id/assign`
 - `POST /api/v1/admin/visibility-labels/:id/unassign`
 - `GET /api/v1/admin/analytics/overview`
+- `GET /api/v1/locations/search`
+- `GET /api/v1/locations/reverse`
 
 Swagger is exposed at [http://localhost:3000/api/docs](http://localhost:3000/api/docs) when `SWAGGER_ENABLED=true`.
 
@@ -162,7 +171,7 @@ Seeded domain data:
 
 Phone OTP delivery is intentionally stubbed in Phase 1. In non-production environments, the requested OTP or email verification token is returned in the API response so local testing stays fast.
 
-File uploads use the local storage driver in Phase 2 and write into `.local-storage/uploads`. The storage abstraction is in place so this can be replaced with S3-compatible storage later.
+File uploads now run through the storage abstraction with either the local filesystem driver or an S3-compatible driver. Local uploads still write into `.local-storage/uploads` by default.
 
 Manual-approval reservations now use BullMQ with Redis for the 5-minute timeout flow. The queue worker runs inside the same Nest process in local development, so `pnpm dev` is enough as long as Redis is up.
 
@@ -170,6 +179,18 @@ For confirmed reservations, the owner-facing `GET /api/v1/reservations/:id` resp
 
 Phase 4 adds recurring BullMQ maintenance for no-show detection and penalty cleanup. Those jobs are also processed inside the same Nest process in local development.
 
-Notifications are persisted in-app and push tokens are stored, but real FCM delivery is still stubbed behind the notifications service and has not been wired to Firebase yet.
+Phase 8 adds delayed BullMQ reminder jobs for confirmed reservations. The default reminder cadence is driven by `RESERVATION_REMINDER_LEAD_MINUTES`, which defaults to `120,30`.
+
+Phase 9 adds per-account reminder preferences for customer flows. If a user has not customized reminder settings yet, the scheduler still falls back to `RESERVATION_REMINDER_LEAD_MINUTES`.
+
+Notifications are always persisted in-app first. If `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, and `FCM_PRIVATE_KEY` are configured, the backend also sends real push notifications through Firebase Admin and removes dead tokens when FCM reports them as invalid.
+
+Phase 10 completes the generic complaint flow from the PRD. Clients can now create reports against users, brands, services, and reviews through `POST /api/v1/reports`, and admins receive a moderation-ready target summary when listing reports.
 
 Phase 5 adds admin moderation APIs, admin audit logging, reusable visibility labels for brands/services/providers, and PostgreSQL-backed discovery search across services, brands, and provider profiles.
+
+For object storage, keep `STORAGE_DRIVER=local` for local filesystem uploads or switch to `STORAGE_DRIVER=s3` and set `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, and optionally `S3_ENDPOINT` plus `S3_FORCE_PATH_STYLE=true` for S3-compatible providers such as MinIO.
+
+For geolocation, keep `GEO_PROVIDER=none` if you do not want external lookups. To enable real address autocomplete and reverse geocoding, set `GEO_PROVIDER=mapbox` and provide `MAPBOX_ACCESS_TOKEN`. `MAPBOX_BASE_URL`, `MAPBOX_DEFAULT_COUNTRY`, and `MAPBOX_DEFAULT_LANGUAGE` are optional overrides.
+
+HTTP responses now include an `x-request-id` header, and both success and error envelopes include the same `requestId` value when the app is running with the full Nest bootstrap.

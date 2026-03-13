@@ -7,7 +7,9 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
+
+import type { RequestWithContext } from '../types/request-with-context.type';
 
 type ErrorPayload = {
   message: string;
@@ -22,7 +24,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
+    const request = ctx.getRequest<RequestWithContext>();
 
     const status = this.getStatus(exception);
     const error = this.normalizeError(exception);
@@ -37,6 +39,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     response.status(status).json({
       success: false,
       error,
+      requestId: request.requestId,
       timestamp: new Date().toISOString(),
       path: request.url,
     });
