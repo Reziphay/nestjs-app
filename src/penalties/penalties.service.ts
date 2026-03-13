@@ -12,6 +12,7 @@ import {
   PenaltyReason,
   Prisma,
   ReservationActorType,
+  ReservationDelayStatus,
   ReservationObjectionStatus,
   ReservationObjectionType,
   ReservationStatus,
@@ -30,7 +31,11 @@ import {
   SUSPENSION_THRESHOLD_POINTS,
 } from './penalties.constants';
 
-const noShowReservationInclude = {
+const noShowReservationSelect = {
+  id: true,
+  status: true,
+  delayStatus: true,
+  requestedStartAt: true,
   service: {
     select: {
       id: true,
@@ -50,7 +55,7 @@ const noShowReservationInclude = {
       fullName: true,
     },
   },
-} satisfies Prisma.ReservationInclude;
+} satisfies Prisma.ReservationSelect;
 
 @Injectable()
 export class PenaltiesService {
@@ -201,11 +206,14 @@ export class PenaltiesService {
     const candidates = await this.prisma.reservation.findMany({
       where: {
         status: ReservationStatus.CONFIRMED,
+        delayStatus: {
+          not: ReservationDelayStatus.ARRIVED,
+        },
         requestedStartAt: {
           lte: now,
         },
       },
-      include: noShowReservationInclude,
+      select: noShowReservationSelect,
       orderBy: {
         requestedStartAt: 'asc',
       },
@@ -227,7 +235,7 @@ export class PenaltiesService {
           where: {
             id: reservation.id,
           },
-          include: noShowReservationInclude,
+          select: noShowReservationSelect,
         });
 
         if (!currentReservation) {
@@ -235,6 +243,10 @@ export class PenaltiesService {
         }
 
         if (currentReservation.status !== ReservationStatus.CONFIRMED) {
+          return null;
+        }
+
+        if (currentReservation.delayStatus === ReservationDelayStatus.ARRIVED) {
           return null;
         }
 

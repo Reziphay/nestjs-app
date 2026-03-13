@@ -1,10 +1,15 @@
 import {
+  IsEnum,
+  IsInt,
   IsISO8601,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
 } from 'class-validator';
+import { ReservationDelayStatus } from '@prisma/client';
 
 export class RejectReservationDto {
   @IsString()
@@ -38,4 +43,20 @@ export class CompleteReservationByQrDto {
   @IsString()
   @IsNotEmpty()
   qrPayload!: string;
+}
+
+export class UpdateReservationDelayStatusDto {
+  @IsEnum(ReservationDelayStatus)
+  status!: ReservationDelayStatus;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  estimatedArrivalMinutes?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }

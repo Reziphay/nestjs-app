@@ -17,6 +17,7 @@ import {
   ReservationActorType,
   ReservationChangeRequestStatus,
   ReservationCompletionMethod,
+  ReservationDelayStatus,
   ReservationStatus,
   ServiceType,
   UserStatus,
@@ -35,6 +36,7 @@ import {
   CompleteReservationByQrDto,
   CreateReservationChangeRequestDto,
   RejectReservationDto,
+  UpdateReservationDelayStatusDto,
 } from './dto/reservation-actions.dto';
 import { ReservationJobsService } from './reservation-jobs.service';
 import {
@@ -118,6 +120,19 @@ const reservationInclude = {
       id: true,
       fullName: true,
       phone: true,
+    },
+  },
+  delayUpdates: {
+    orderBy: {
+      createdAt: 'desc',
+    },
+    include: {
+      updatedByUser: {
+        select: {
+          id: true,
+          fullName: true,
+        },
+      },
     },
   },
   statusHistory: {
@@ -869,6 +884,11 @@ export class ReservationsService {
           requestedEndAt: changeRequest.requestedEndAt,
           status: ReservationStatus.CONFIRMED,
           approvalExpiresAt: null,
+          delayStatus: ReservationDelayStatus.NONE,
+          estimatedArrivalMinutes: null,
+          delayNote: null,
+          delayStatusUpdatedAt: null,
+          arrivedAt: null,
         },
       });
 
@@ -972,6 +992,96 @@ export class ReservationsService {
         include: reservationInclude,
       });
     });
+
+    return {
+      reservation: this.serializeReservation(updatedReservation),
+    };
+  }
+
+  async updateDelayStatus(
+    userId: string,
+    reservationId: string,
+    dto: UpdateReservationDelayStatusDto,
+  ): Promise<Record<string, unknown>> {
+    await this.assertRole(userId, AppRole.UCR);
+
+    const reservation = await this.getCustomerReservationOrThrow(
+      userId,
+      reservationId,
+    );
+
+    if (reservation.status !== ReservationStatus.CONFIRMED) {
+      throw new ConflictException(
+        'Delay status can only be updated for confirmed reservations.',
+      );
+    }
+
+    if (
+      dto.status === ReservationDelayStatus.ARRIVED &&
+      dto.estimatedArrivalMinutes != null
+    ) {
+      throw new BadRequestException(
+        'Estimated arrival minutes are only allowed when reporting a delay.',
+      );
+    }
+
+    if (reservation.delayStatus === ReservationDelayStatus.ARRIVED) {
+      throw new ConflictException('Arrival has already been recorded.');
+    }
+
+    const note = dto.note?.trim() || null;
+    const estimatedArrivalMinutes =
+      dto.status === ReservationDelayStatus.RUNNING_LATE
+        ? (dto.estimatedArrivalMinutes ?? null)
+        : null;
+    const now = new Date();
+
+    const updatedReservation = await this.prisma.$transaction(async (tx) => {
+      await tx.reservation.update({
+        where: {
+          id: reservation.id,
+        },
+        data: {
+          delayStatus: dto.status,
+          estimatedArrivalMinutes,
+          delayNote: note,
+          delayStatusUpdatedAt: now,
+          arrivedAt:
+            dto.status === ReservationDelayStatus.ARRIVED
+              ? (reservation.arrivedAt ?? now)
+              : null,
+        },
+      });
+
+      await tx.reservationDelayUpdate.create({
+        data: {
+          reservationId: reservation.id,
+          status: dto.status,
+          estimatedArrivalMinutes,
+          note,
+          updatedByUserId: userId,
+        },
+      });
+
+      return tx.reservation.findUniqueOrThrow({
+        where: {
+          id: reservation.id,
+        },
+        include: reservationInclude,
+      });
+    });
+
+    await this.runNotificationSafely(() =>
+      this.notificationsService.notifyReservationDelayUpdated({
+        reservationId: updatedReservation.id,
+        ownerUserId: updatedReservation.serviceOwnerUser.id,
+        serviceName: updatedReservation.service.name,
+        customerName: updatedReservation.customerUser.fullName,
+        status: dto.status,
+        estimatedArrivalMinutes,
+        note,
+      }),
+    );
 
     return {
       reservation: this.serializeReservation(updatedReservation),
@@ -1711,6 +1821,13 @@ export class ReservationsService {
       requestedStartAt: reservation.requestedStartAt,
       requestedEndAt: reservation.requestedEndAt,
       approvalExpiresAt: reservation.approvalExpiresAt,
+      delay: {
+        status: reservation.delayStatus,
+        estimatedArrivalMinutes: reservation.estimatedArrivalMinutes,
+        note: reservation.delayNote,
+        updatedAt: reservation.delayStatusUpdatedAt,
+        arrivedAt: reservation.arrivedAt,
+      },
       customerNote: reservation.customerNote,
       rejectionReason: reservation.rejectionReason,
       cancellationReason: reservation.cancellationReason,
@@ -1736,6 +1853,14 @@ export class ReservationsService {
         updatedAt: changeRequest.updatedAt,
         requestedByUser: changeRequest.requestedByUser,
         reviewedByUser: changeRequest.reviewedByUser,
+      })),
+      delayHistory: (reservation.delayUpdates ?? []).map((delayUpdate) => ({
+        id: delayUpdate.id,
+        status: delayUpdate.status,
+        estimatedArrivalMinutes: delayUpdate.estimatedArrivalMinutes,
+        note: delayUpdate.note,
+        updatedByUser: delayUpdate.updatedByUser,
+        createdAt: delayUpdate.createdAt,
       })),
       statusHistory: reservation.statusHistory.map((entry) => ({
         id: entry.id,

@@ -106,6 +106,12 @@ enum ReservationCompletionMethod {
   MANUAL
 }
 
+enum ReservationDelayStatus {
+  NONE
+  RUNNING_LATE
+  ARRIVED
+}
+
 enum PenaltyReason {
   NO_SHOW
 }
@@ -152,6 +158,7 @@ enum NotificationType {
   RESERVATION_REJECTED
   RESERVATION_CANCELLED
   RESERVATION_CHANGE_REQUESTED
+  RESERVATION_DELAY_UPDATED
   RESERVATION_REMINDER
   RESERVATION_COMPLETED
   RESERVATION_EXPIRED
@@ -213,6 +220,7 @@ model User {
   reservationStatusHistory            ReservationStatusHistory[]    @relation("ReservationStatusActor")
   requestedReservationChanges         ReservationChangeRequest[]    @relation("ReservationChangeRequestedBy")
   reviewedReservationChanges          ReservationChangeRequest[]    @relation("ReservationChangeReviewedBy")
+  reservationDelayUpdates             ReservationDelayUpdate[]      @relation("ReservationDelayUpdatedBy")
   reservationCompletionActions        ReservationCompletionRecord[] @relation("ReservationCompletionActor")
   verifiedReservationCompletions      ReservationCompletionRecord[] @relation("ReservationCompletionVerifiedCustomer")
   penaltyPoints                       PenaltyPoint[]
@@ -556,23 +564,28 @@ model ServiceAvailabilityException {
 }
 
 model Reservation {
-  id                                     String            @id @default(uuid()) @db.Uuid
-  serviceId                              String            @map("service_id") @db.Uuid
-  customerUserId                         String            @map("customer_user_id") @db.Uuid
-  serviceOwnerUserId                     String            @map("service_owner_user_id") @db.Uuid
-  brandId                                String?           @map("brand_id") @db.Uuid
-  requestedStartAt                       DateTime          @map("requested_start_at")
-  requestedEndAt                         DateTime?         @map("requested_end_at")
+  id                                     String                 @id @default(uuid()) @db.Uuid
+  serviceId                              String                 @map("service_id") @db.Uuid
+  customerUserId                         String                 @map("customer_user_id") @db.Uuid
+  serviceOwnerUserId                     String                 @map("service_owner_user_id") @db.Uuid
+  brandId                                String?                @map("brand_id") @db.Uuid
+  requestedStartAt                       DateTime               @map("requested_start_at")
+  requestedEndAt                         DateTime?              @map("requested_end_at")
   status                                 ReservationStatus
-  approvalExpiresAt                      DateTime?         @map("approval_expires_at")
-  customerNote                           String?           @map("customer_note")
-  rejectionReason                        String?           @map("rejection_reason")
-  cancellationReason                     String?           @map("cancellation_reason")
-  freeCancellationEligibleAtCancellation Boolean?          @map("free_cancellation_eligible_at_cancellation")
-  cancelledAt                            DateTime?         @map("cancelled_at")
-  completedAt                            DateTime?         @map("completed_at")
-  createdAt                              DateTime          @default(now()) @map("created_at")
-  updatedAt                              DateTime          @updatedAt @map("updated_at")
+  approvalExpiresAt                      DateTime?              @map("approval_expires_at")
+  customerNote                           String?                @map("customer_note")
+  rejectionReason                        String?                @map("rejection_reason")
+  cancellationReason                     String?                @map("cancellation_reason")
+  freeCancellationEligibleAtCancellation Boolean?               @map("free_cancellation_eligible_at_cancellation")
+  delayStatus                            ReservationDelayStatus @default(NONE) @map("delay_status")
+  estimatedArrivalMinutes                Int?                   @map("estimated_arrival_minutes")
+  delayNote                              String?                @map("delay_note")
+  delayStatusUpdatedAt                   DateTime?              @map("delay_status_updated_at")
+  arrivedAt                              DateTime?              @map("arrived_at")
+  cancelledAt                            DateTime?              @map("cancelled_at")
+  completedAt                            DateTime?              @map("completed_at")
+  createdAt                              DateTime               @default(now()) @map("created_at")
+  updatedAt                              DateTime               @updatedAt @map("updated_at")
 
   service           Service                       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   customerUser      User                          @relation("ReservationCustomer", fields: [customerUserId], references: [id], onDelete: Cascade)
@@ -580,6 +593,7 @@ model Reservation {
   brand             Brand?                        @relation(fields: [brandId], references: [id], onDelete: SetNull)
   statusHistory     ReservationStatusHistory[]
   changeRequests    ReservationChangeRequest[]
+  delayUpdates      ReservationDelayUpdate[]
   completionRecords ReservationCompletionRecord[]
   penaltyPoints     PenaltyPoint[]
   objections        ReservationObjection[]
@@ -588,6 +602,7 @@ model Reservation {
   @@index([customerUserId, status, createdAt], map: "reservations_customer_user_id_status_created_at_idx")
   @@index([serviceOwnerUserId, status, createdAt], map: "reservations_owner_user_id_status_created_at_idx")
   @@index([serviceId, status, requestedStartAt], map: "reservations_service_id_status_start_at_idx")
+  @@index([status, delayStatus, requestedStartAt], map: "reservations_status_delay_status_start_at_idx")
   @@index([brandId], map: "reservations_brand_id_idx")
   @@map("reservations")
 }
@@ -649,6 +664,23 @@ model ReservationCompletionRecord {
   @@index([reservationId, createdAt], map: "reservation_completion_records_reservation_id_created_at_idx")
   @@index([completedByUserId], map: "reservation_completion_records_completed_by_idx")
   @@map("reservation_completion_records")
+}
+
+model ReservationDelayUpdate {
+  id                      String                 @id @default(uuid()) @db.Uuid
+  reservationId           String                 @map("reservation_id") @db.Uuid
+  status                  ReservationDelayStatus
+  estimatedArrivalMinutes Int?                   @map("estimated_arrival_minutes")
+  note                    String?
+  updatedByUserId         String                 @map("updated_by_user_id") @db.Uuid
+  createdAt               DateTime               @default(now()) @map("created_at")
+
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  updatedByUser User        @relation("ReservationDelayUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([reservationId, createdAt], map: "reservation_delay_updates_reservation_id_created_at_idx")
+  @@index([updatedByUserId], map: "reservation_delay_updates_updated_by_user_id_idx")
+  @@map("reservation_delay_updates")
 }
 
 model PenaltyPoint {

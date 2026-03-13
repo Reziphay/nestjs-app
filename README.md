@@ -11,7 +11,7 @@ Current backend foundation for the Reziphay MVP. This app is a NestJS modular mo
 - health checks for PostgreSQL and Redis
 - brands, memberships, and join requests
 - service categories, services, availability, and photo upload base
-- reservations, change requests, manual approval expiration jobs, and completion flows
+- reservations, change requests, delay-status updates, manual approval expiration jobs, and completion flows
 - reviews, rating stats, in-app notifications, push-token registration, no-show penalties, and objections
 - admin moderation, visibility-label management, analytics, and discovery search
 - real S3-compatible uploads, real FCM push delivery support, and geolocation provider integration
@@ -76,7 +76,7 @@ pnpm test
 pnpm test:e2e
 ```
 
-## API surface through Phase 10
+## API surface through Phase 11
 
 - `POST /api/v1/auth/request-phone-otp`
 - `POST /api/v1/auth/verify-phone-otp`
@@ -124,6 +124,7 @@ pnpm test:e2e
 - `POST /api/v1/reservations/:id/change-requests`
 - `POST /api/v1/reservations/change-requests/:id/accept`
 - `POST /api/v1/reservations/change-requests/:id/reject`
+- `POST /api/v1/reservations/:id/delay-status`
 - `POST /api/v1/reservations/:id/complete-manually`
 - `POST /api/v1/reservations/:id/complete-by-qr`
 - `POST /api/v1/reviews`
@@ -186,6 +187,8 @@ Phase 9 adds per-account reminder preferences for customer flows. If a user has 
 Notifications are always persisted in-app first. If `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, and `FCM_PRIVATE_KEY` are configured, the backend also sends real push notifications through Firebase Admin and removes dead tokens when FCM reports them as invalid.
 
 Phase 10 completes the generic complaint flow from the PRD. Clients can now create reports against users, brands, services, and reviews through `POST /api/v1/reports`, and admins receive a moderation-ready target summary when listing reports.
+
+Phase 11 adds customer delay-status updates on confirmed reservations. Owners receive in-app and optional push notifications when a customer reports `RUNNING_LATE` or `ARRIVED`, and the no-show worker now skips reservations already marked as arrived.
 
 Phase 5 adds admin moderation APIs, admin audit logging, reusable visibility labels for brands/services/providers, and PostgreSQL-backed discovery search across services, brands, and provider profiles.
 

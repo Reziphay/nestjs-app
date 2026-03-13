@@ -3,6 +3,7 @@ import {
   AppRole,
   NotificationType,
   Prisma,
+  ReservationDelayStatus,
   ReportTargetType,
 } from '@prisma/client';
 
@@ -199,6 +200,31 @@ export class NotificationsService {
       body: `${input.serviceName} has a pending change request.`,
       dataJson: {
         reservationId: input.reservationId,
+      },
+    });
+  }
+
+  async notifyReservationDelayUpdated(input: {
+    reservationId: string;
+    ownerUserId: string;
+    serviceName: string;
+    customerName: string;
+    status: ReservationDelayStatus;
+    estimatedArrivalMinutes: number | null;
+    note: string | null;
+  }): Promise<void> {
+    await this.createNotifications([input.ownerUserId], {
+      type: NotificationType.RESERVATION_DELAY_UPDATED,
+      title:
+        input.status === ReservationDelayStatus.ARRIVED
+          ? 'Customer arrived'
+          : 'Customer running late',
+      body: this.formatDelayStatusBody(input),
+      dataJson: {
+        reservationId: input.reservationId,
+        status: input.status,
+        estimatedArrivalMinutes: input.estimatedArrivalMinutes,
+        note: input.note,
       },
     });
   }
@@ -437,6 +463,24 @@ export class NotificationsService {
     }
 
     return leadMinutes === 1 ? '1 minute' : `${leadMinutes} minutes`;
+  }
+
+  private formatDelayStatusBody(input: {
+    serviceName: string;
+    customerName: string;
+    status: ReservationDelayStatus;
+    estimatedArrivalMinutes: number | null;
+    note: string | null;
+  }): string {
+    if (input.status === ReservationDelayStatus.ARRIVED) {
+      return `${input.customerName} marked themselves as arrived for ${input.serviceName}.`;
+    }
+
+    if (input.estimatedArrivalMinutes != null) {
+      return `${input.customerName} reported a delay for ${input.serviceName}. ETA ${input.estimatedArrivalMinutes} minutes.`;
+    }
+
+    return `${input.customerName} reported a delay for ${input.serviceName}.`;
   }
 
   private formatReportTargetType(targetType: ReportTargetType): string {

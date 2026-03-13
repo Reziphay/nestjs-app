@@ -4,6 +4,7 @@
 import {
   ApprovalMode,
   ReservationCompletionMethod,
+  ReservationDelayStatus,
   ReservationStatus,
   ServiceType,
   UserStatus,
@@ -96,6 +97,11 @@ describe('ReservationsService', () => {
       requestedStartAt: new Date(requestedStartAt),
       requestedEndAt: null,
       approvalExpiresAt: new Date('2026-03-13T08:05:00.000Z'),
+      delayStatus: ReservationDelayStatus.NONE,
+      estimatedArrivalMinutes: null,
+      delayNote: null,
+      delayStatusUpdatedAt: null,
+      arrivedAt: null,
       customerNote: 'Please confirm soon',
       rejectionReason: null,
       cancellationReason: null,
@@ -126,6 +132,7 @@ describe('ReservationsService', () => {
         fullName: 'Demo Owner',
         phone: '+10000000003',
       },
+      delayUpdates: [],
       changeRequests: [],
       statusHistory: [],
       completionRecords: [],
@@ -217,6 +224,11 @@ describe('ReservationsService', () => {
       requestedStartAt: new Date('2026-03-16T10:00:00.000Z'),
       requestedEndAt: null,
       approvalExpiresAt: new Date('2026-03-13T08:05:00.000Z'),
+      delayStatus: ReservationDelayStatus.NONE,
+      estimatedArrivalMinutes: null,
+      delayNote: null,
+      delayStatusUpdatedAt: null,
+      arrivedAt: null,
       customerNote: null,
       rejectionReason: null,
       cancellationReason: null,
@@ -247,6 +259,7 @@ describe('ReservationsService', () => {
         fullName: 'Demo Owner',
         phone: '+10000000003',
       },
+      delayUpdates: [],
       changeRequests: [],
       statusHistory: [],
       completionRecords: [],
@@ -279,6 +292,11 @@ describe('ReservationsService', () => {
       requestedStartAt: new Date('2026-03-16T10:00:00.000Z'),
       requestedEndAt: null,
       approvalExpiresAt: null,
+      delayStatus: ReservationDelayStatus.NONE,
+      estimatedArrivalMinutes: null,
+      delayNote: null,
+      delayStatusUpdatedAt: null,
+      arrivedAt: null,
       customerNote: null,
       rejectionReason: null,
       cancellationReason: null,
@@ -309,6 +327,7 @@ describe('ReservationsService', () => {
         fullName: 'Demo Owner',
         phone: '+10000000003',
       },
+      delayUpdates: [],
       changeRequests: [],
       statusHistory: [],
       completionRecords: [],
@@ -390,14 +409,22 @@ describe('ReservationsService', () => {
     );
   });
 
-  it('dispatches an upcoming reminder only for the confirmed reservation time', async () => {
-    const notifyReservationReminder = jest.fn().mockResolvedValue(undefined);
+  it('lets the customer publish a delay update for a confirmed reservation', async () => {
+    const userRoleFindUnique = jest.fn().mockResolvedValue({
+      userId: 'customer-1',
+      role: 'UCR',
+    });
     const reservationFindUnique = jest.fn().mockResolvedValue({
       id: 'reservation-1',
       status: ReservationStatus.CONFIRMED,
       requestedStartAt: new Date('2026-03-16T10:00:00.000Z'),
       requestedEndAt: null,
       approvalExpiresAt: null,
+      delayStatus: ReservationDelayStatus.NONE,
+      estimatedArrivalMinutes: null,
+      delayNote: null,
+      delayStatusUpdatedAt: null,
+      arrivedAt: null,
       customerNote: null,
       rejectionReason: null,
       cancellationReason: null,
@@ -428,6 +455,205 @@ describe('ReservationsService', () => {
         fullName: 'Demo Owner',
         phone: '+10000000003',
       },
+      delayUpdates: [],
+      changeRequests: [],
+      statusHistory: [],
+      completionRecords: [],
+    });
+    const reservationUpdate = jest.fn().mockResolvedValue(undefined);
+    const reservationDelayUpdateCreate = jest.fn().mockResolvedValue(undefined);
+    const reservationFindUniqueOrThrow = jest.fn().mockResolvedValue({
+      id: 'reservation-1',
+      status: ReservationStatus.CONFIRMED,
+      requestedStartAt: new Date('2026-03-16T10:00:00.000Z'),
+      requestedEndAt: null,
+      approvalExpiresAt: null,
+      delayStatus: ReservationDelayStatus.RUNNING_LATE,
+      estimatedArrivalMinutes: 12,
+      delayNote: 'Traffic',
+      delayStatusUpdatedAt: new Date('2026-03-13T08:00:00.000Z'),
+      arrivedAt: null,
+      customerNote: null,
+      rejectionReason: null,
+      cancellationReason: null,
+      freeCancellationEligibleAtCancellation: null,
+      cancelledAt: null,
+      completedAt: null,
+      createdAt: new Date('2026-03-13T08:00:00.000Z'),
+      updatedAt: new Date('2026-03-13T08:00:00.000Z'),
+      service: {
+        id: 'service-1',
+        name: 'Classic Haircut',
+        approvalMode: ApprovalMode.MANUAL,
+        serviceType: ServiceType.SOLO,
+        waitingTimeMinutes: 15,
+        freeCancellationDeadlineMinutes: 120,
+        priceAmount: 25,
+        priceCurrency: 'AZN',
+        isActive: true,
+      },
+      brand: null,
+      customerUser: {
+        id: 'customer-1',
+        fullName: 'Demo Customer',
+        phone: '+10000000002',
+      },
+      serviceOwnerUser: {
+        id: 'owner-1',
+        fullName: 'Demo Owner',
+        phone: '+10000000003',
+      },
+      delayUpdates: [
+        {
+          id: 'delay-update-1',
+          status: ReservationDelayStatus.RUNNING_LATE,
+          estimatedArrivalMinutes: 12,
+          note: 'Traffic',
+          updatedByUser: {
+            id: 'customer-1',
+            fullName: 'Demo Customer',
+          },
+          createdAt: new Date('2026-03-13T08:00:00.000Z'),
+        },
+      ],
+      changeRequests: [],
+      statusHistory: [],
+      completionRecords: [],
+    });
+    const notifyReservationDelayUpdated = jest
+      .fn()
+      .mockResolvedValue(undefined);
+
+    const prisma = {
+      userRole: {
+        findUnique: userRoleFindUnique,
+      },
+      reservation: {
+        findUnique: reservationFindUnique,
+      },
+      $transaction: jest.fn(
+        (callback: (tx: Record<string, unknown>) => unknown) =>
+          Promise.resolve(
+            callback({
+              reservation: {
+                update: reservationUpdate,
+                findUniqueOrThrow: reservationFindUniqueOrThrow,
+              },
+              reservationDelayUpdate: {
+                create: reservationDelayUpdateCreate,
+              },
+            }),
+          ),
+      ),
+    } as any;
+
+    const service = new ReservationsService(
+      prisma,
+      {} as any,
+      notificationPreferencesService as any,
+      {
+        notifyReservationDelayUpdated,
+      } as any,
+      new JwtService(),
+      reservationConfig as any,
+    );
+
+    const result = await service.updateDelayStatus(
+      'customer-1',
+      'reservation-1',
+      {
+        status: ReservationDelayStatus.RUNNING_LATE,
+        estimatedArrivalMinutes: 12,
+        note: 'Traffic',
+      },
+    );
+
+    expect(reservationUpdate).toHaveBeenCalledWith({
+      where: {
+        id: 'reservation-1',
+      },
+      data: {
+        delayStatus: ReservationDelayStatus.RUNNING_LATE,
+        estimatedArrivalMinutes: 12,
+        delayNote: 'Traffic',
+        delayStatusUpdatedAt: expect.any(Date),
+        arrivedAt: null,
+      },
+    });
+    expect(reservationDelayUpdateCreate).toHaveBeenCalledWith({
+      data: {
+        reservationId: 'reservation-1',
+        status: ReservationDelayStatus.RUNNING_LATE,
+        estimatedArrivalMinutes: 12,
+        note: 'Traffic',
+        updatedByUserId: 'customer-1',
+      },
+    });
+    expect(notifyReservationDelayUpdated).toHaveBeenCalledWith({
+      reservationId: 'reservation-1',
+      ownerUserId: 'owner-1',
+      serviceName: 'Classic Haircut',
+      customerName: 'Demo Customer',
+      status: ReservationDelayStatus.RUNNING_LATE,
+      estimatedArrivalMinutes: 12,
+      note: 'Traffic',
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        reservation: expect.objectContaining({
+          delay: expect.objectContaining({
+            status: ReservationDelayStatus.RUNNING_LATE,
+            estimatedArrivalMinutes: 12,
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('dispatches an upcoming reminder only for the confirmed reservation time', async () => {
+    const notifyReservationReminder = jest.fn().mockResolvedValue(undefined);
+    const reservationFindUnique = jest.fn().mockResolvedValue({
+      id: 'reservation-1',
+      status: ReservationStatus.CONFIRMED,
+      requestedStartAt: new Date('2026-03-16T10:00:00.000Z'),
+      requestedEndAt: null,
+      approvalExpiresAt: null,
+      delayStatus: ReservationDelayStatus.NONE,
+      estimatedArrivalMinutes: null,
+      delayNote: null,
+      delayStatusUpdatedAt: null,
+      arrivedAt: null,
+      customerNote: null,
+      rejectionReason: null,
+      cancellationReason: null,
+      freeCancellationEligibleAtCancellation: null,
+      cancelledAt: null,
+      completedAt: null,
+      createdAt: new Date('2026-03-13T08:00:00.000Z'),
+      updatedAt: new Date('2026-03-13T08:00:00.000Z'),
+      service: {
+        id: 'service-1',
+        name: 'Classic Haircut',
+        approvalMode: ApprovalMode.MANUAL,
+        serviceType: ServiceType.SOLO,
+        waitingTimeMinutes: 15,
+        freeCancellationDeadlineMinutes: 120,
+        priceAmount: 25,
+        priceCurrency: 'AZN',
+        isActive: true,
+      },
+      brand: null,
+      customerUser: {
+        id: 'customer-1',
+        fullName: 'Demo Customer',
+        phone: '+10000000002',
+      },
+      serviceOwnerUser: {
+        id: 'owner-1',
+        fullName: 'Demo Owner',
+        phone: '+10000000003',
+      },
+      delayUpdates: [],
       changeRequests: [],
       statusHistory: [],
       completionRecords: [],
@@ -476,6 +702,11 @@ describe('ReservationsService', () => {
       requestedStartAt: new Date('2026-03-16T10:00:00.000Z'),
       requestedEndAt: null,
       approvalExpiresAt: null,
+      delayStatus: ReservationDelayStatus.NONE,
+      estimatedArrivalMinutes: null,
+      delayNote: null,
+      delayStatusUpdatedAt: null,
+      arrivedAt: null,
       customerNote: null,
       rejectionReason: null,
       cancellationReason: null,
@@ -506,6 +737,7 @@ describe('ReservationsService', () => {
         fullName: 'Demo Owner',
         phone: '+10000000003',
       },
+      delayUpdates: [],
       changeRequests: [],
       statusHistory: [],
       completionRecords: [],

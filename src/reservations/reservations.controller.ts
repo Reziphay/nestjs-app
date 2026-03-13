@@ -21,6 +21,7 @@ import {
   CompleteReservationByQrDto,
   CreateReservationChangeRequestDto,
   RejectReservationDto,
+  UpdateReservationDelayStatusDto,
 } from './dto/reservation-actions.dto';
 import { ReservationsService } from './reservations.service';
 
@@ -148,6 +149,20 @@ export class ReservationsController {
     return this.reservationsService.rejectChangeRequest(
       user.sub,
       changeRequestId,
+    );
+  }
+
+  @Roles(AppRole.UCR)
+  @Post(':id/delay-status')
+  updateDelayStatus(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Param('id') reservationId: string,
+    @Body() dto: UpdateReservationDelayStatusDto,
+  ): Promise<Record<string, unknown>> {
+    return this.reservationsService.updateDelayStatus(
+      user.sub,
+      reservationId,
+      dto,
     );
   }
 

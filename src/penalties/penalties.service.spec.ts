@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
-import { ReservationStatus, UserStatus } from '@prisma/client';
+import {
+  ReservationDelayStatus,
+  ReservationStatus,
+  UserStatus,
+} from '@prisma/client';
 
 import { PenaltiesService } from './penalties.service';
 
@@ -14,6 +18,7 @@ describe('PenaltiesService', () => {
       {
         id: 'reservation-1',
         status: ReservationStatus.CONFIRMED,
+        delayStatus: ReservationDelayStatus.NONE,
         requestedStartAt: new Date('2026-03-20T10:00:00.000Z'),
         service: {
           id: 'service-1',
@@ -33,6 +38,7 @@ describe('PenaltiesService', () => {
     const currentReservation = {
       id: 'reservation-1',
       status: ReservationStatus.CONFIRMED,
+      delayStatus: ReservationDelayStatus.NONE,
       requestedStartAt: new Date('2026-03-20T10:00:00.000Z'),
       service: {
         id: 'service-1',
@@ -130,6 +136,84 @@ describe('PenaltiesService', () => {
     });
     expect(result).toEqual({
       processedCount: 1,
+    });
+
+    jest.useRealTimers();
+  });
+
+  it('skips reservations already marked as arrived when processing no-shows', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-03-20T10:30:00.000Z'));
+
+    const reservationFindMany = jest.fn().mockResolvedValue([
+      {
+        id: 'reservation-1',
+        status: ReservationStatus.CONFIRMED,
+        delayStatus: ReservationDelayStatus.ARRIVED,
+        requestedStartAt: new Date('2026-03-20T10:00:00.000Z'),
+        service: {
+          id: 'service-1',
+          name: 'Classic Haircut',
+          waitingTimeMinutes: 15,
+        },
+        customerUser: {
+          id: 'customer-1',
+          fullName: 'Demo Customer',
+        },
+        serviceOwnerUser: {
+          id: 'owner-1',
+          fullName: 'Demo Owner',
+        },
+      },
+    ]);
+    const reservationFindUnique = jest.fn().mockResolvedValue({
+      id: 'reservation-1',
+      status: ReservationStatus.CONFIRMED,
+      delayStatus: ReservationDelayStatus.ARRIVED,
+      requestedStartAt: new Date('2026-03-20T10:00:00.000Z'),
+      service: {
+        id: 'service-1',
+        name: 'Classic Haircut',
+        waitingTimeMinutes: 15,
+      },
+      customerUser: {
+        id: 'customer-1',
+        fullName: 'Demo Customer',
+      },
+      serviceOwnerUser: {
+        id: 'owner-1',
+        fullName: 'Demo Owner',
+      },
+    });
+    const reservationUpdate = jest.fn();
+
+    const prisma = {
+      reservation: {
+        findMany: reservationFindMany,
+      },
+      $transaction: jest.fn(
+        (callback: (tx: Record<string, unknown>) => unknown) =>
+          Promise.resolve(
+            callback({
+              reservation: {
+                findUnique: reservationFindUnique,
+                update: reservationUpdate,
+              },
+            }),
+          ),
+      ),
+    } as any;
+
+    const service = new PenaltiesService(prisma, {
+      notifyReservationNoShow: jest.fn(),
+      notifyPenaltyApplied: jest.fn(),
+    } as any);
+
+    const result = await service.processNoShows();
+
+    expect(reservationUpdate).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      processedCount: 0,
     });
 
     jest.useRealTimers();
