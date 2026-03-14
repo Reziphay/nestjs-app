@@ -7,6 +7,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { AccessTokenGuard } from '../common/guards/access-token.guard';
 import { RefreshTokenGuard } from '../common/guards/refresh-token.guard';
 import type { AuthenticatedRequestUser } from '../common/types/authenticated-request-user.type';
+import { CompleteRegistrationDto } from './dto/complete-registration.dto';
 import { RequestEmailMagicLinkDto } from './dto/request-email-magic-link.dto';
 import { RequestPhoneOtpDto } from './dto/request-phone-otp.dto';
 import { VerifyEmailMagicLinkDto } from './dto/verify-email-magic-link.dto';
@@ -35,6 +36,18 @@ export class AuthController {
   ): Promise<Record<string, unknown>> {
     return this.authService.verifyPhoneOtp(dto, {
       deviceInfo: dto.deviceInfo ?? request.headers['user-agent'] ?? null,
+      ip: request.ip ?? null,
+    });
+  }
+
+  @Public()
+  @Post('complete-registration')
+  completeRegistration(
+    @Body() dto: CompleteRegistrationDto,
+    @Req() request: Request,
+  ): Promise<Record<string, unknown>> {
+    return this.authService.completeRegistration(dto, {
+      deviceInfo: request.headers['user-agent'] ?? null,
       ip: request.ip ?? null,
     });
   }

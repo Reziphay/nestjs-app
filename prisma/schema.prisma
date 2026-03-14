@@ -20,6 +20,7 @@ enum AppRole {
 }
 
 enum OtpPurpose {
+  AUTHENTICATE
   REGISTER
   LOGIN
   VERIFY_PHONE

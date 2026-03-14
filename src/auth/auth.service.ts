@@ -20,6 +20,7 @@ import { UserStatus } from '../common/enums/user-status.enum';
 import type { AuthenticatedRequestUser } from '../common/types/authenticated-request-user.type';
 import { parseDurationToMilliseconds } from '../common/utils/duration.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { CompleteRegistrationDto } from './dto/complete-registration.dto';
 import { RequestEmailMagicLinkDto } from './dto/request-email-magic-link.dto';
 import { RequestPhoneOtpDto } from './dto/request-phone-otp.dto';
 import { VerifyEmailMagicLinkDto } from './dto/verify-email-magic-link.dto';
@@ -69,6 +70,8 @@ export class AuthService {
     if (dto.purpose === OtpPurpose.REGISTER) {
       await this.assertRegisterableIdentity(phone, email);
     }
+
+    // AUTHENTICATE purpose: no pre-check — user existence is determined at verify time
 
     await this.prisma.otpCode.updateMany({
       where: {
@@ -158,12 +161,47 @@ export class AuthService {
     });
 
     if (
+      dto.purpose !== OtpPurpose.AUTHENTICATE &&
       dto.purpose !== OtpPurpose.REGISTER &&
       dto.purpose !== OtpPurpose.LOGIN
     ) {
       throw new BadRequestException(
         'This OTP purpose is not enabled in Phase 1.',
       );
+    }
+
+    // AUTHENTICATE: check user existence and branch accordingly
+    if (dto.purpose === OtpPurpose.AUTHENTICATE) {
+      const existingUser = await this.prisma.user.findUnique({
+        where: { phone },
+        include: { roles: true },
+      });
+
+      if (existingUser) {
+        // User exists → log them in
+        this.assertUserCanAuthenticate(existingUser);
+        await this.prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            lastLoginAt: new Date(),
+            phoneVerifiedAt: existingUser.phoneVerifiedAt ?? new Date(),
+          },
+        });
+        existingUser.lastLoginAt = new Date();
+        existingUser.phoneVerifiedAt = existingUser.phoneVerifiedAt ?? new Date();
+        const activeRole = this.resolveDefaultActiveRole(existingUser);
+        return this.createSessionResponse(existingUser, metadata, activeRole);
+      }
+
+      // User doesn't exist → issue a short-lived registration token
+      const registrationToken = await this.jwtService.signAsync(
+        { phone, type: 'registration_pending' },
+        {
+          secret: this.authConfiguration.accessSecret,
+          expiresIn: '15m',
+        },
+      );
+      return { requiresRegistration: true, phone, registrationToken };
     }
 
     const user =
@@ -183,6 +221,55 @@ export class AuthService {
 
     const activeRole = this.resolveDefaultActiveRole(user);
 
+    return this.createSessionResponse(user, metadata, activeRole);
+  }
+
+  async completeRegistration(
+    dto: CompleteRegistrationDto,
+    metadata: RequestMetadata,
+  ): Promise<Record<string, unknown>> {
+    let phone: string;
+    try {
+      const payload = await this.jwtService.verifyAsync<{
+        phone: string;
+        type: string;
+      }>(dto.registrationToken, {
+        secret: this.authConfiguration.accessSecret,
+      });
+
+      if (payload.type !== 'registration_pending') {
+        throw new Error('Invalid token type');
+      }
+      phone = payload.phone;
+    } catch {
+      throw new UnauthorizedException('Registration token is invalid or expired.');
+    }
+
+    const fullName = dto.fullName.trim();
+    const email = this.normalizeEmail(dto.email);
+
+    await this.assertRegisterableIdentity(phone, email);
+
+    const user = await this.prisma.user.create({
+      data: {
+        fullName,
+        email,
+        phone,
+        phoneVerifiedAt: new Date(),
+        roles: {
+          create: { role: AppRole.UCR },
+        },
+      },
+      include: { roles: true },
+    });
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+    user.lastLoginAt = new Date();
+
+    const activeRole = this.resolveDefaultActiveRole(user);
     return this.createSessionResponse(user, metadata, activeRole);
   }
 

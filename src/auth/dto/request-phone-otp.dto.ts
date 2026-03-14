@@ -30,7 +30,8 @@ export class RequestPhoneOtpDto {
     example: 'Aysel Karimova',
   })
   @ValidateIf(
-    (value: RequestPhoneOtpDto) => value.purpose === OtpPurpose.REGISTER,
+    (value: RequestPhoneOtpDto) =>
+      value.purpose === OtpPurpose.REGISTER,
   )
   @IsString()
   @IsNotEmpty()
@@ -40,7 +41,8 @@ export class RequestPhoneOtpDto {
     example: 'aysel@example.com',
   })
   @ValidateIf(
-    (value: RequestPhoneOtpDto) => value.purpose === OtpPurpose.REGISTER,
+    (value: RequestPhoneOtpDto) =>
+      value.purpose === OtpPurpose.REGISTER,
   )
   @IsEmail()
   email?: string;
