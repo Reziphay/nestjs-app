@@ -59,6 +59,14 @@ export class ReservationsController {
     return this.reservationsService.listIncomingReservations(user.sub, query);
   }
 
+  @Roles(AppRole.USO)
+  @Get('incoming/stats')
+  getIncomingStats(
+    @CurrentUser() user: AuthenticatedRequestUser,
+  ): Promise<Record<string, unknown>> {
+    return this.reservationsService.getIncomingStats(user.sub);
+  }
+
   @Get(':id')
   getReservation(
     @CurrentUser() user: AuthenticatedRequestUser,

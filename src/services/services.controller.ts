@@ -59,6 +59,17 @@ export class ServicesController {
   @ApiBearerAuth()
   @UseGuards(AccessTokenGuard)
   @Roles(AppRole.USO)
+  @Get('mine')
+  listMyServices(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Query() query: ListServicesDto,
+  ): Promise<Record<string, unknown>> {
+    return this.servicesService.listServices({ ...query, ownerUserId: user.sub });
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AccessTokenGuard)
+  @Roles(AppRole.USO)
   @Post()
   createService(
     @CurrentUser() user: AuthenticatedRequestUser,

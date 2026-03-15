@@ -294,6 +294,36 @@ export class ReservationsService {
     };
   }
 
+  async getIncomingStats(userId: string): Promise<Record<string, unknown>> {
+    await this.assertRole(userId, AppRole.USO);
+
+    const counts = await this.prisma.reservation.groupBy({
+      by: ['status'],
+      where: { serviceOwnerUserId: userId },
+      _count: { status: true },
+    });
+
+    const stats: Record<string, number> = {
+      pending: 0,
+      confirmed: 0,
+      completed: 0,
+      rejected: 0,
+      cancelledByCustomer: 0,
+      cancelledByOwner: 0,
+      total: 0,
+    };
+
+    for (const row of counts) {
+      const key = row.status
+        .toLowerCase()
+        .replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
+      stats[key] = (stats[key] ?? 0) + row._count.status;
+      stats['total'] += row._count.status;
+    }
+
+    return stats;
+  }
+
   async getReservation(
     user: Pick<AuthenticatedRequestUser, 'roles' | 'sub'>,
     reservationId: string,

@@ -257,7 +257,7 @@ export class AuthService {
         phone,
         phoneVerifiedAt: new Date(),
         roles: {
-          create: { role: AppRole.UCR },
+          create: { role: dto.initialRole ?? AppRole.UCR },
         },
       },
       include: { roles: true },
