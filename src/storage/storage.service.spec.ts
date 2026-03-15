@@ -21,6 +21,14 @@ describe('StorageService', () => {
       } as any,
       {
         bucket: 'reziphay-files',
+        driver: 'local',
+        publicUrl: '',
+        endpoint: '',
+        region: '',
+        forcePathStyle: false,
+      } as any,
+      {
+        appBaseUrl: 'http://localhost:3000',
       } as any,
       {
         uploadObject,

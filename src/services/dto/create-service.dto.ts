@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { ApprovalMode, ServiceType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsEnum,
   IsInt,
@@ -249,4 +250,12 @@ export class UpdateServiceDto {
   @IsInt()
   @Min(0)
   freeCancellationDeadlineMinutes?: number | null;
+
+  @ApiPropertyOptional({ type: [ServiceAvailabilityRuleDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(32)
+  @ValidateNested({ each: true })
+  @Type(() => ServiceAvailabilityRuleDto)
+  availabilityRules?: ServiceAvailabilityRuleDto[];
 }

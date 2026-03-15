@@ -64,7 +64,12 @@ export class ServicesController {
     @CurrentUser() user: AuthenticatedRequestUser,
     @Query() query: ListServicesDto,
   ): Promise<Record<string, unknown>> {
-    return this.servicesService.listServices({ ...query, ownerUserId: user.sub });
+    // Owners always see all their services (active + archived)
+    return this.servicesService.listServices({
+      ...query,
+      ownerUserId: user.sub,
+      includeInactive: true,
+    });
   }
 
   @ApiBearerAuth()

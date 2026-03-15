@@ -2,7 +2,9 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as express from 'express';
 import helmet from 'helmet';
+import { join } from 'path';
 
 import { AppModule } from './app.module';
 import { AppLoggerService } from './common/logger/app-logger.service';
@@ -25,6 +27,24 @@ async function bootstrap(): Promise<void> {
     origin: corsOrigins.length > 0 ? corsOrigins : true,
     credentials: true,
   });
+
+  // Serve locally-stored uploads at /uploads/* when STORAGE_DRIVER=local.
+  // In production use STORAGE_PUBLIC_URL pointing at S3/CDN instead.
+  const storageDriver = configService.get<string>('storage.driver', 'local');
+  if (storageDriver === 'local') {
+    const localDir = configService.get<string>(
+      'storage.localDir',
+      '.local-storage/uploads',
+    );
+    app.use(
+      '/uploads',
+      express.static(join(process.cwd(), localDir), {
+        maxAge: '1y',
+        immutable: true,
+      }),
+    );
+  }
+
   app.setGlobalPrefix(apiPrefix);
   app.useGlobalPipes(
     new ValidationPipe({

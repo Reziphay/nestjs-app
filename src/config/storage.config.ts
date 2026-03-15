@@ -9,4 +9,12 @@ export const storageConfig = registerAs('storage', () => ({
   accessKey: process.env['S3_ACCESS_KEY'] ?? '',
   secretKey: process.env['S3_SECRET_KEY'] ?? '',
   forcePathStyle: process.env['S3_FORCE_PATH_STYLE'] === 'true',
+  /**
+   * Optional CDN / public base URL that overrides all auto-computed file URLs.
+   *   local dev  → leave empty (files are served via GET /uploads/* by the app)
+   *   MinIO      → "http://minio:9000/reziphay-local"
+   *   AWS S3     → "https://reziphay.s3.eu-central-1.amazonaws.com"
+   *   CDN        → "https://cdn.reziphay.com"
+   */
+  publicUrl: process.env['STORAGE_PUBLIC_URL'] ?? '',
 }));

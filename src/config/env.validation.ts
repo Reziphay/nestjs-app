@@ -133,6 +133,10 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  STORAGE_PUBLIC_URL?: string;
+
+  @IsOptional()
+  @IsString()
   FCM_PROJECT_ID?: string;
 
   @IsOptional()

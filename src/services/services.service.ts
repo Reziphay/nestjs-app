@@ -189,6 +189,10 @@ export class ServicesService {
     this.validatePricing(dto.priceAmount, dto.priceCurrency);
     this.validateAdvanceMinutes(dto.minAdvanceMinutes, dto.maxAdvanceMinutes);
 
+    if (dto.availabilityRules !== undefined) {
+      this.validateAvailabilityRules(dto.availabilityRules);
+    }
+
     const updatedService = await this.prisma.$transaction(async (tx) => {
       let addressId =
         dto.addressId === undefined ? service.addressId : dto.addressId;
@@ -201,6 +205,24 @@ export class ServicesService {
           dto.brandId === undefined ? service.brandId : (dto.brandId ?? null),
           dto.address,
         );
+      }
+
+      // Replace availability rules if provided
+      if (dto.availabilityRules !== undefined) {
+        await tx.serviceAvailabilityRule.deleteMany({
+          where: { serviceId: service.id },
+        });
+        if (dto.availabilityRules.length > 0) {
+          await tx.serviceAvailabilityRule.createMany({
+            data: dto.availabilityRules.map((rule) => ({
+              serviceId: service.id,
+              dayOfWeek: rule.dayOfWeek,
+              startTime: rule.startTime,
+              endTime: rule.endTime,
+              isActive: rule.isActive ?? true,
+            })),
+          });
+        }
       }
 
       await tx.service.update({
@@ -840,7 +862,7 @@ export class ServicesService {
       photos: service.photos.map((photo) => ({
         id: photo.id,
         sortOrder: photo.sortOrder,
-        file: photo.file,
+        file: this.storageService.serializeFile(photo.file),
       })),
       availability: {
         rules: service.availabilityRules,

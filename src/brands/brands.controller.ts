@@ -49,6 +49,16 @@ export class BrandsController {
     return this.brandsService.createBrand(user.sub, dto);
   }
 
+  @ApiBearerAuth()
+  @UseGuards(AccessTokenGuard)
+  @Roles(AppRole.USO)
+  @Get('mine')
+  myBrands(
+    @CurrentUser() user: AuthenticatedRequestUser,
+  ): Promise<Record<string, unknown>> {
+    return this.brandsService.listMyBrands(user.sub);
+  }
+
   @Public()
   @Get(':id')
   getBrand(@Param('id') brandId: string): Promise<Record<string, unknown>> {

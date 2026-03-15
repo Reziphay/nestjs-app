@@ -61,6 +61,26 @@ export class BrandsService {
     };
   }
 
+  async listMyBrands(userId: string): Promise<Record<string, unknown>> {
+    const brands = await this.prisma.brand.findMany({
+      where: {
+        status: BrandStatus.ACTIVE,
+        memberships: {
+          some: {
+            userId,
+            status: BrandMembershipStatus.ACTIVE,
+          },
+        },
+      },
+      include: this.getBrandInclude(false),
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      items: brands.map((brand) => this.serializeBrand(brand)),
+    };
+  }
+
   async createBrand(
     userId: string,
     dto: CreateBrandDto,
@@ -818,7 +838,9 @@ export class BrandsService {
       status: brand.status,
       owner: brand.owner,
       logoFileId: brand.logoFileId,
-      logoFile: brand.logoFile,
+      logoFile: brand.logoFile
+        ? this.storageService.serializeFile(brand.logoFile)
+        : null,
       primaryAddress,
       memberCount: brand.memberships?.length,
       ratingStats: brand.brandRatingStat ?? {
