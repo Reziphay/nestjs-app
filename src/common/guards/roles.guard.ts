@@ -22,7 +22,12 @@ export class RolesGuard implements CanActivate {
     const request = context
       .switchToHttp()
       .getRequest<{ user?: AuthenticatedRequestUser }>();
-    const userRoles = request.user?.roles ?? [];
+
+    // If user is not yet populated (AccessTokenGuard runs after global guards),
+    // defer to AccessTokenGuard — it will reject unauthenticated requests.
+    if (!request.user) return true;
+
+    const userRoles = request.user.roles ?? [];
 
     return requiredRoles.some((role) => userRoles.includes(role));
   }
