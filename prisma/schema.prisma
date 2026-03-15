@@ -203,10 +203,12 @@ model User {
   status          UserStatus @default(ACTIVE)
   suspendedUntil  DateTime?  @map("suspended_until")
   closedReason    String?    @map("closed_reason")
+  avatarFileId    String?    @unique @map("avatar_file_id") @db.Uuid
   lastLoginAt     DateTime?  @map("last_login_at")
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
 
+  avatarFile                          FileObject?                   @relation("UserAvatar", fields: [avatarFileId], references: [id], onDelete: SetNull)
   roles                               UserRole[]
   authSessions                        AuthSession[]
   emailMagicLinks                     EmailMagicLink[]
@@ -516,6 +518,7 @@ model FileObject {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   uploadedByUser User?          @relation("UploadedByUser", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  avatarUser     User?          @relation("UserAvatar")
   brandsAsLogo   Brand[]        @relation("BrandLogoFile")
   servicePhotos  ServicePhoto[]
 

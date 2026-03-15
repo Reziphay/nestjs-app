@@ -5,13 +5,16 @@ import { AuthService } from '../auth/auth.service';
 import { NotificationPreferencesService } from '../notification-preferences/notification-preferences.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SearchDocumentsService } from '../search-documents/search-documents.service';
+import { StorageService } from '../storage/storage.service';
 import { UpdateNotificationSettingsDto } from './dto/update-notification-settings.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
+    private readonly storageService: StorageService,
     private readonly notificationPreferencesService: NotificationPreferencesService,
     private readonly searchDocumentsService: SearchDocumentsService,
   ) {}
@@ -84,6 +87,39 @@ export class UsersService {
     }
 
     return this.authService.reissueTokensForSession(userId, sessionId, role);
+  }
+
+  async updateProfile(
+    userId: string,
+    sessionId: string,
+    dto: UpdateProfileDto,
+  ): Promise<Record<string, unknown>> {
+    if (dto.fullName !== undefined) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { fullName: dto.fullName.trim() },
+      });
+    }
+    return this.authService.getSessionAwareProfile(userId, sessionId);
+  }
+
+  async uploadAvatar(
+    userId: string,
+    sessionId: string,
+    file: Express.Multer.File | undefined,
+  ): Promise<Record<string, unknown>> {
+    const uploadedFile = await this.storageService.uploadFile(
+      file,
+      userId,
+      'avatars',
+    );
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarFileId: uploadedFile.id },
+    });
+
+    return this.authService.getSessionAwareProfile(userId, sessionId);
   }
 
   getNotificationSettings(userId: string): Promise<Record<string, unknown>> {

@@ -20,6 +20,7 @@ import { UserStatus } from '../common/enums/user-status.enum';
 import type { AuthenticatedRequestUser } from '../common/types/authenticated-request-user.type';
 import { parseDurationToMilliseconds } from '../common/utils/duration.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { CompleteRegistrationDto } from './dto/complete-registration.dto';
 import { RequestEmailMagicLinkDto } from './dto/request-email-magic-link.dto';
 import { RequestPhoneOtpDto } from './dto/request-phone-otp.dto';
@@ -29,6 +30,7 @@ import { VerifyPhoneOtpDto } from './dto/verify-phone-otp.dto';
 type UserWithRoles = Prisma.UserGetPayload<{
   include: {
     roles: true;
+    avatarFile: true;
   };
 }>;
 
@@ -47,6 +49,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly storageService: StorageService,
     @Inject(authConfig.KEY)
     private readonly authConfiguration: ConfigType<typeof authConfig>,
     @Inject(appConfig.KEY)
@@ -174,7 +177,7 @@ export class AuthService {
     if (dto.purpose === OtpPurpose.AUTHENTICATE) {
       const existingUser = await this.prisma.user.findUnique({
         where: { phone },
-        include: { roles: true },
+        include: { roles: true, avatarFile: true },
       });
 
       if (existingUser) {
@@ -260,7 +263,7 @@ export class AuthService {
           create: { role: dto.initialRole ?? AppRole.UCR },
         },
       },
-      include: { roles: true },
+      include: { roles: true, avatarFile: true },
     });
 
     await this.prisma.user.update({
@@ -371,6 +374,7 @@ export class AuthService {
         user: {
           include: {
             roles: true,
+            avatarFile: true,
           },
         },
       },
@@ -519,6 +523,7 @@ export class AuthService {
       },
       include: {
         roles: true,
+        avatarFile: true,
       },
     });
   }
@@ -528,6 +533,7 @@ export class AuthService {
       where: { phone },
       include: {
         roles: true,
+        avatarFile: true,
       },
     });
 
@@ -631,6 +637,7 @@ export class AuthService {
       where: { id: userId },
       include: {
         roles: true,
+        avatarFile: true,
       },
     });
 
@@ -677,6 +684,9 @@ export class AuthService {
       status: user.status,
       roles: user.roles.map((role) => role.role),
       activeRole,
+      avatarUrl: user.avatarFile
+        ? this.storageService.getFileUrl(user.avatarFile.objectKey)
+        : null,
       emailVerifiedAt: user.emailVerifiedAt,
       phoneVerifiedAt: user.phoneVerifiedAt,
       suspendedUntil: user.suspendedUntil,

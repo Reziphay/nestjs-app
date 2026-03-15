@@ -1,10 +1,21 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 
 import { AuthenticatedRequestUser } from '../common/types/authenticated-request-user.type';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AccessTokenGuard } from '../common/guards/access-token.guard';
 import { UpdateNotificationSettingsDto } from './dto/update-notification-settings.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { SwitchRoleDto } from './dto/switch-role.dto';
 import { UsersService } from './users.service';
 
@@ -20,6 +31,24 @@ export class UsersController {
     @CurrentUser() user: AuthenticatedRequestUser,
   ): Promise<Record<string, unknown>> {
     return this.usersService.getMe(user.sub, user.sessionId);
+  }
+
+  @Patch('me')
+  updateProfile(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Body() dto: UpdateProfileDto,
+  ): Promise<Record<string, unknown>> {
+    return this.usersService.updateProfile(user.sub, user.sessionId, dto);
+  }
+
+  @Post('me/avatar')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadAvatar(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<Record<string, unknown>> {
+    return this.usersService.uploadAvatar(user.sub, user.sessionId, file);
   }
 
   @Post('me/activate-uso')
