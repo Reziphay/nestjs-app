@@ -826,7 +826,11 @@ export class ServicesService {
       name: service.name,
       description: service.description,
       owner: {
-        ...service.ownerUser,
+        id: service.ownerUser.id,
+        fullName: service.ownerUser.fullName,
+        avatar: service.ownerUser.avatarFile
+          ? this.storageService.serializeFile(service.ownerUser.avatarFile)
+          : null,
         ratingStats: service.ownerUser.serviceOwnerRatingStat ?? {
           avgRating: 0,
           reviewCount: 0,
@@ -834,7 +838,12 @@ export class ServicesService {
       },
       brand: service.brand
         ? {
-            ...service.brand,
+            id: service.brand.id,
+            name: service.brand.name,
+            status: service.brand.status,
+            logo: service.brand.logoFile
+              ? this.storageService.serializeFile(service.brand.logoFile)
+              : null,
             ratingStats: service.brand.brandRatingStat ?? {
               avgRating: 0,
               reviewCount: 0,
@@ -880,6 +889,7 @@ export class ServicesService {
         select: {
           id: true,
           fullName: true,
+          avatarFile: true,
           serviceOwnerRatingStat: {
             select: {
               avgRating: true,
@@ -893,6 +903,7 @@ export class ServicesService {
           id: true,
           name: true,
           status: true,
+          logoFile: true,
           brandRatingStat: {
             select: {
               avgRating: true,

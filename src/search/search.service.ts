@@ -1559,21 +1559,17 @@ export class SearchService {
     if (geoBounds) {
       whereConditions.push(
         Prisma.sql`
-          sa.lat is not null
-          and sa.lng is not null
-          and sa.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
-          and sa.lng between ${geoBounds.minLng} and ${geoBounds.maxLng}
+          (sa.lat is null or (
+            sa.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
+            and sa.lng between ${geoBounds.minLng} and ${geoBounds.maxLng}
+          ))
         `,
       );
     }
 
     if (coordinates && query.radiusKm !== undefined) {
       whereConditions.push(
-        Prisma.sql`
-          sa.lat is not null
-          and sa.lng is not null
-          and ${exactDistanceKm} <= ${query.radiusKm}
-        `,
+        Prisma.sql`(sa.lat is null or ${exactDistanceKm} <= ${query.radiusKm})`,
       );
     }
 
@@ -1648,8 +1644,6 @@ export class SearchService {
     const whereConditions: Prisma.Sql[] = [
       Prisma.sql`s.is_active = true`,
       Prisma.sql`u.status::text = ${UserStatus.ACTIVE}`,
-      Prisma.sql`sa.lat is not null`,
-      Prisma.sql`sa.lng is not null`,
     ];
 
     if (query.brandId) {
@@ -1707,14 +1701,18 @@ export class SearchService {
     if (geoBounds) {
       whereConditions.push(
         Prisma.sql`
-          sa.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
-          and sa.lng between ${geoBounds.minLng} and ${geoBounds.maxLng}
+          (sa.lat is null or (
+            sa.lat between ${geoBounds.minLat} and ${geoBounds.maxLat}
+            and sa.lng between ${geoBounds.minLng} and ${geoBounds.maxLng}
+          ))
         `,
       );
     }
 
     if (query.radiusKm !== undefined) {
-      whereConditions.push(Prisma.sql`${exactDistanceKm} <= ${query.radiusKm}`);
+      whereConditions.push(
+        Prisma.sql`(sa.lat is null or ${exactDistanceKm} <= ${query.radiusKm})`,
+      );
     }
 
     if (query.visibilityLabelSlug) {
@@ -1748,7 +1746,7 @@ export class SearchService {
         s.id,
         ${exactDistanceKm} as exact_distance_km
       from services s
-      join service_addresses sa on sa.id = s.address_id
+      left join service_addresses sa on sa.id = s.address_id
       join users u on u.id = s.owner_user_id
       where ${Prisma.join(whereConditions, ' and ')}
       order by ${orderBy}, s.id asc
