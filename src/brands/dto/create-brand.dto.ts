@@ -61,15 +61,39 @@ export class CreateBrandDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
+  email?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  location?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  website?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsUUID()
   logoFileId?: string;
 
-  @ApiProperty({
-    type: CreateBrandAddressDto,
-  })
+  @ApiPropertyOptional({ description: 'OTP code sent to brand phone for verification' })
+  @IsOptional()
+  @IsString()
+  phoneOtpCode?: string;
+
+  @ApiPropertyOptional({ type: CreateBrandAddressDto })
+  @IsOptional()
   @ValidateNested()
   @Type(() => CreateBrandAddressDto)
-  primaryAddress!: CreateBrandAddressDto;
+  primaryAddress?: CreateBrandAddressDto;
 }
 
 export class UpdateBrandDto {
@@ -83,6 +107,21 @@ export class UpdateBrandDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  email?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  location?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  website?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

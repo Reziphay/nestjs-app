@@ -340,6 +340,10 @@ model Brand {
   logoFileId  String?     @map("logo_file_id") @db.Uuid
   name        String
   description String?
+  email       String?
+  phone       String?
+  location    String?
+  website     String?
   status      BrandStatus @default(ACTIVE)
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
@@ -471,6 +475,7 @@ model Service {
   addressId                       String?      @map("address_id") @db.Uuid
   name                            String
   description                     String?
+  location                        String?
   priceAmount                     Decimal?     @map("price_amount") @db.Decimal(12, 2)
   priceCurrency                   String?      @map("price_currency") @db.VarChar(3)
   waitingTimeMinutes              Int          @map("waiting_time_minutes")

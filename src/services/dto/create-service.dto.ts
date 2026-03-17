@@ -98,6 +98,11 @@ export class CreateServiceDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
+  location?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsNumber()
   priceAmount?: number;
 
@@ -199,6 +204,11 @@ export class UpdateServiceDto {
   @IsOptional()
   @IsString()
   description?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  location?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

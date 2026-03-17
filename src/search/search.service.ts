@@ -14,6 +14,7 @@ import {
   serializeActiveVisibilityLabels,
 } from '../common/utils/visibility.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import {
   doReservationWindowsConflict,
   formatUtcTime,
@@ -129,6 +130,7 @@ const serviceSearchInclude = {
 } satisfies Prisma.ServiceInclude;
 
 const brandSearchInclude = {
+  logoFile: true,
   owner: {
     select: {
       id: true,
@@ -309,7 +311,10 @@ type DiscoveryCursorPayload = {
 
 @Injectable()
 export class SearchService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storageService: StorageService,
+  ) {}
 
   async listNearbyServices(
     query: SearchDiscoveryDto,
@@ -2593,6 +2598,9 @@ export class SearchService {
       id: brand.id,
       name: brand.name,
       description: brand.description,
+      logoFile: brand.logoFile
+        ? this.storageService.serializeFile(brand.logoFile)
+        : null,
       address: primaryAddress,
       distanceKm,
       ratingStats: brand.brandRatingStat ?? {

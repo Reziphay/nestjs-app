@@ -7,6 +7,10 @@ import { BadRequestException } from '@nestjs/common';
 import { SearchSortMode } from './dto/search-discovery.dto';
 import { SearchService } from './search.service';
 
+const mockStorageService = {
+  serializeFile: jest.fn((file) => ({ ...file, url: `http://test/${file.objectKey}` })),
+} as any;
+
 describe('SearchService', () => {
   it('uses ranked text hits when q is provided across discovery entities', async () => {
     const queryRaw = jest
@@ -162,7 +166,7 @@ describe('SearchService', () => {
           },
         ]),
       },
-    } as any);
+    } as any, mockStorageService);
 
     const result = await service.searchDiscovery({
       q: 'premium barber',
@@ -293,7 +297,7 @@ describe('SearchService', () => {
       },
     } as any;
 
-    const service = new SearchService(prisma);
+    const service = new SearchService(prisma, mockStorageService);
 
     const result = await service.searchDiscovery({
       lat: 40.4093,
@@ -433,7 +437,7 @@ describe('SearchService', () => {
       user: {
         findMany: jest.fn().mockResolvedValue([]),
       },
-    } as any);
+    } as any, mockStorageService);
 
     const result = await service.searchDiscovery({
       lat: 40.4093,
@@ -573,7 +577,7 @@ describe('SearchService', () => {
       user: {
         findMany: jest.fn().mockResolvedValue([]),
       },
-    } as any);
+    } as any, mockStorageService);
 
     const result = await service.listNearbyServices({
       lat: 40.4093,
@@ -682,7 +686,7 @@ describe('SearchService', () => {
       user: {
         findMany: jest.fn().mockResolvedValue([]),
       },
-    } as any);
+    } as any, mockStorageService);
 
     const result = await service.searchDiscovery({
       lat: 40.4093,
@@ -775,7 +779,7 @@ describe('SearchService', () => {
       user: {
         findMany: jest.fn().mockResolvedValue([]),
       },
-    } as any);
+    } as any, mockStorageService);
 
     const result = await service.searchDiscovery({
       sortBy: SearchSortMode.POPULARITY,
@@ -807,7 +811,7 @@ describe('SearchService', () => {
       user: {
         findMany: jest.fn(),
       },
-    } as any);
+    } as any, mockStorageService);
 
     await expect(
       service.listNearbyServices({ limit: 10 }),
@@ -825,7 +829,7 @@ describe('SearchService', () => {
       user: {
         findMany: jest.fn().mockResolvedValue([]),
       },
-    } as any);
+    } as any, mockStorageService);
 
     await expect(
       service.searchDiscovery({
@@ -849,7 +853,7 @@ describe('SearchService', () => {
       user: {
         findMany: jest.fn().mockResolvedValue([]),
       },
-    } as any);
+    } as any, mockStorageService);
 
     await expect(
       service.searchDiscovery({
@@ -870,7 +874,7 @@ describe('SearchService', () => {
       user: {
         findMany: jest.fn().mockResolvedValue([]),
       },
-    } as any);
+    } as any, mockStorageService);
 
     await expect(
       service.searchDiscovery({
@@ -894,7 +898,7 @@ describe('SearchService', () => {
       user: {
         findMany: jest.fn().mockResolvedValue([]),
       },
-    } as any);
+    } as any, mockStorageService);
 
     await service.listNearbyServices({
       lat: 40.4093,
@@ -1005,7 +1009,7 @@ describe('SearchService', () => {
       user: {
         findMany: jest.fn().mockResolvedValue([]),
       },
-    } as any);
+    } as any, mockStorageService);
 
     const firstPage = await service.listNearbyServices({
       lat: 40.4093,
@@ -1106,7 +1110,7 @@ describe('SearchService', () => {
       user: {
         findMany: userFindMany,
       },
-    } as any);
+    } as any, mockStorageService);
 
     const result = await service.listServiceOwners({
       q: 'Demo',

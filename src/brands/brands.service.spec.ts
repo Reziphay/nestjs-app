@@ -79,6 +79,7 @@ describe('BrandsService', () => {
       prisma,
       {} as any,
       searchDocumentsService as any,
+      {} as any,
     );
 
     const result = await service.createBrand('uso-1', {
@@ -187,6 +188,7 @@ describe('BrandsService', () => {
         uploadFile,
       } as any,
       searchDocumentsService as any,
+      {} as any,
     );
 
     const result = await service.uploadLogo('uso-1', 'brand-1', {

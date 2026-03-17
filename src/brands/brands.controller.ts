@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -63,6 +66,18 @@ export class BrandsController {
   @Get(':id')
   getBrand(@Param('id') brandId: string): Promise<Record<string, unknown>> {
     return this.brandsService.getBrand(brandId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AccessTokenGuard)
+  @Roles(AppRole.USO)
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteBrand(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Param('id') brandId: string,
+  ): Promise<void> {
+    return this.brandsService.deleteBrand(user.sub, brandId);
   }
 
   @ApiBearerAuth()

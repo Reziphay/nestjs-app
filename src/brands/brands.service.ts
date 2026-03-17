@@ -2,8 +2,10 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   AppRole,
@@ -13,7 +15,11 @@ import {
   BrandStatus,
   Prisma,
 } from '@prisma/client';
+import { createHmac } from 'crypto';
+import { ConfigType } from '@nestjs/config';
 
+import { authConfig } from '../config';
+import { OtpPurpose } from '../common/enums/otp-purpose.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { SearchDocumentsService } from '../search-documents/search-documents.service';
 import { StorageService } from '../storage/storage.service';
@@ -35,6 +41,8 @@ export class BrandsService {
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly searchDocumentsService: SearchDocumentsService,
+    @Inject(authConfig.KEY)
+    private readonly authConfiguration: ConfigType<typeof authConfig>,
   ) {}
 
   async listBrands(query: ListBrandsDto): Promise<Record<string, unknown>> {
@@ -81,12 +89,37 @@ export class BrandsService {
     };
   }
 
+  async deleteBrand(
+    userId: string,
+    brandId: string,
+  ): Promise<void> {
+    const brand = await this.getOwnedBrandOrThrow(userId, brandId);
+
+    await this.prisma.$transaction(async (tx) => {
+      // Soft-delete: mark as closed
+      await tx.brand.update({
+        where: { id: brand.id },
+        data: { status: BrandStatus.CLOSED },
+      });
+      // Remove all memberships
+      await tx.brandMembership.updateMany({
+        where: { brandId: brand.id },
+        data: { status: BrandMembershipStatus.REMOVED },
+      });
+    });
+  }
+
   async createBrand(
     userId: string,
     dto: CreateBrandDto,
   ): Promise<Record<string, unknown>> {
     await this.assertUso(userId);
     await this.assertLogoOwnership(dto.logoFileId, userId);
+
+    // If a brand phone is provided, verify OTP before creating
+    if (dto.phone && dto.phoneOtpCode) {
+      await this.verifyAndConsumePhoneOtp(dto.phone, dto.phoneOtpCode);
+    }
 
     const brand = await this.prisma.$transaction(async (tx) => {
       const createdBrand = await tx.brand.create({
@@ -95,22 +128,28 @@ export class BrandsService {
           logoFileId: dto.logoFileId ?? null,
           name: dto.name.trim(),
           description: dto.description?.trim() || null,
+          email: dto.email?.trim() || null,
+          phone: dto.phone?.trim() || null,
+          location: dto.location?.trim() || null,
+          website: dto.website?.trim() || null,
         },
       });
 
-      await tx.brandAddress.create({
-        data: {
-          brandId: createdBrand.id,
-          label: dto.primaryAddress.label?.trim() || null,
-          fullAddress: dto.primaryAddress.fullAddress.trim(),
-          country: dto.primaryAddress.country.trim(),
-          city: dto.primaryAddress.city.trim(),
-          lat: dto.primaryAddress.lat ?? null,
-          lng: dto.primaryAddress.lng ?? null,
-          placeId: dto.primaryAddress.placeId?.trim() || null,
-          isPrimary: true,
-        },
-      });
+      if (dto.primaryAddress) {
+        await tx.brandAddress.create({
+          data: {
+            brandId: createdBrand.id,
+            label: dto.primaryAddress.label?.trim() || null,
+            fullAddress: dto.primaryAddress.fullAddress.trim(),
+            country: dto.primaryAddress.country.trim(),
+            city: dto.primaryAddress.city.trim(),
+            lat: dto.primaryAddress.lat ?? null,
+            lng: dto.primaryAddress.lng ?? null,
+            placeId: dto.primaryAddress.placeId?.trim() || null,
+            isPrimary: true,
+          },
+        });
+      }
 
       await tx.brandMembership.create({
         data: {
@@ -170,6 +209,15 @@ export class BrandsService {
           ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
           ...(dto.description !== undefined
             ? { description: dto.description?.trim() || null }
+            : {}),
+          ...(dto.email !== undefined
+            ? { email: dto.email?.trim() || null }
+            : {}),
+          ...(dto.location !== undefined
+            ? { location: dto.location?.trim() || null }
+            : {}),
+          ...(dto.website !== undefined
+            ? { website: dto.website?.trim() || null }
             : {}),
           ...(dto.logoFileId !== undefined
             ? { logoFileId: dto.logoFileId }
@@ -713,12 +761,50 @@ export class BrandsService {
     }
   }
 
+  private async verifyAndConsumePhoneOtp(
+    phone: string,
+    code: string,
+  ): Promise<void> {
+    // Normalize phone the same way auth service does (strip leading spaces)
+    const normalizedPhone = phone.replace(/\s+/g, '');
+    const otpRecord = await this.prisma.otpCode.findFirst({
+      where: {
+        phone: normalizedPhone,
+        purpose: OtpPurpose.VERIFY_PHONE,
+        consumedAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!otpRecord || otpRecord.expiresAt.getTime() < Date.now()) {
+      throw new UnauthorizedException('Phone OTP is invalid or expired.');
+    }
+
+    const hashed = createHmac('sha256', this.authConfiguration.hashSecret)
+      .update(code.trim())
+      .digest('hex');
+
+    if (hashed !== otpRecord.codeHash) {
+      await this.prisma.otpCode.update({
+        where: { id: otpRecord.id },
+        data: { attemptCount: { increment: 1 } },
+      });
+      throw new UnauthorizedException('Phone OTP is invalid or expired.');
+    }
+
+    await this.prisma.otpCode.update({
+      where: { id: otpRecord.id },
+      data: { consumedAt: new Date() },
+    });
+  }
+
   private getBrandInclude(includeMemberships: boolean) {
     return {
       owner: {
         select: {
           id: true,
           fullName: true,
+          avatarFile: true,
         },
       },
       logoFile: true,
@@ -779,6 +865,10 @@ export class BrandsService {
     id: string;
     name: string;
     description: string | null;
+    email: string | null;
+    phone: string | null;
+    location: string | null;
+    website: string | null;
     status: BrandStatus;
     logoFileId: string | null;
     logoFile?: {
@@ -794,6 +884,16 @@ export class BrandsService {
     owner: {
       id: string;
       fullName: string;
+      avatarFile?: {
+        id: string;
+        bucket: string;
+        objectKey: string;
+        originalFilename: string | null;
+        mimeType: string;
+        sizeBytes: number;
+        uploadedByUserId: string | null;
+        createdAt: Date;
+      } | null;
     };
     addresses: Array<{
       id: string;
@@ -835,8 +935,18 @@ export class BrandsService {
       id: brand.id,
       name: brand.name,
       description: brand.description,
+      email: brand.email,
+      phone: brand.phone,
+      location: brand.location,
+      website: brand.website,
       status: brand.status,
-      owner: brand.owner,
+      owner: {
+        id: brand.owner.id,
+        fullName: brand.owner.fullName,
+        avatar: brand.owner.avatarFile
+          ? this.storageService.serializeFile(brand.owner.avatarFile)
+          : null,
+      },
       logoFileId: brand.logoFileId,
       logoFile: brand.logoFile
         ? this.storageService.serializeFile(brand.logoFile)

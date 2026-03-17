@@ -98,6 +98,7 @@ export class ServicesService {
           addressId: createdAddressId,
           name: dto.name.trim(),
           description: dto.description?.trim() || null,
+          location: dto.location?.trim() || null,
           priceAmount: dto.priceAmount ?? null,
           priceCurrency: dto.priceCurrency?.trim().toUpperCase() || null,
           waitingTimeMinutes: dto.waitingTimeMinutes,
@@ -238,6 +239,9 @@ export class ServicesService {
           ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
           ...(dto.description !== undefined
             ? { description: dto.description?.trim() || null }
+            : {}),
+          ...(dto.location !== undefined
+            ? { location: dto.location?.trim() || null }
             : {}),
           ...(dto.priceAmount !== undefined
             ? { priceAmount: dto.priceAmount }
@@ -825,6 +829,7 @@ export class ServicesService {
       id: service.id,
       name: service.name,
       description: service.description,
+      location: service.location,
       owner: {
         id: service.ownerUser.id,
         fullName: service.ownerUser.fullName,
