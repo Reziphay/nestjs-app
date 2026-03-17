@@ -248,6 +248,10 @@ model User {
   createdUserVisibilityAssignments    UserVisibilityAssignment[]    @relation("UserVisibilityAssignmentCreator")
   adminAuditLogs                      AdminAuditLog[]               @relation("AdminAuditActor")
   uploadedFiles                       FileObject[]                  @relation("UploadedByUser")
+  favoriteBrands                      FavoriteBrand[]               @relation("UserFavoriteBrands")
+  favoriteOwners                      FavoriteOwner[]               @relation("UserFavoriteOwners")
+  favoritedByOwners                   FavoriteOwner[]               @relation("OwnerFavoritedBy")
+  favoriteServices                    FavoriteService[]             @relation("UserFavoriteServices")
 
   @@index([status], map: "users_status_idx")
   @@index([fullName], map: "users_full_name_idx")
@@ -361,6 +365,7 @@ model Brand {
   brandPopularityStat   BrandPopularityStat?
   searchDocument        BrandSearchDocument?
   visibilityAssignments BrandVisibilityAssignment[]
+  favoritedBy           FavoriteBrand[]             @relation("BrandFavorites")
 
   @@index([ownerUserId], map: "brands_owner_user_id_idx")
   @@index([status], map: "brands_status_idx")
@@ -424,6 +429,45 @@ model BrandJoinRequest {
   @@index([brandId, status], map: "brand_join_requests_brand_id_status_idx")
   @@index([requesterUserId, status], map: "brand_join_requests_requester_user_id_status_idx")
   @@map("brand_join_requests")
+}
+
+model FavoriteBrand {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  brandId   String   @map("brand_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation("UserFavoriteBrands", fields: [userId], references: [id], onDelete: Cascade)
+  brand Brand @relation("BrandFavorites", fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, brandId])
+  @@map("favorite_brands")
+}
+
+model FavoriteOwner {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  ownerUserId String   @map("owner_user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user  User @relation("UserFavoriteOwners", fields: [userId],      references: [id], onDelete: Cascade)
+  owner User @relation("OwnerFavoritedBy",   fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ownerUserId])
+  @@map("favorite_owners")
+}
+
+model FavoriteService {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  serviceId String   @map("service_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation("UserFavoriteServices", fields: [userId],    references: [id], onDelete: Cascade)
+  service Service @relation("ServiceFavorites",     fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serviceId])
+  @@map("favorite_services")
 }
 
 model ServiceCategory {
@@ -502,6 +546,7 @@ model Service {
   popularityStat         ServicePopularityStat?
   searchDocument         ServiceSearchDocument?
   visibilityAssignments  ServiceVisibilityAssignment[]
+  favoritedBy            FavoriteService[]              @relation("ServiceFavorites")
 
   @@index([ownerUserId, isActive], map: "services_owner_user_id_is_active_idx")
   @@index([brandId], map: "services_brand_id_idx")

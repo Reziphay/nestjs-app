@@ -127,6 +127,11 @@ const serviceSearchInclude = {
     },
   },
   visibilityAssignments: activeVisibilityLabelInclude,
+  photos: {
+    take: 1,
+    orderBy: { sortOrder: 'asc' as const },
+    include: { file: true },
+  },
 } satisfies Prisma.ServiceInclude;
 
 const brandSearchInclude = {
@@ -170,6 +175,7 @@ const brandSearchInclude = {
 } satisfies Prisma.BrandInclude;
 
 const providerSearchInclude = {
+  avatarFile: true,
   serviceOwnerRatingStat: {
     select: {
       avgRating: true,
@@ -2578,6 +2584,11 @@ export class SearchService {
       approvalMode: service.approvalMode,
       priceAmount: service.priceAmount,
       priceCurrency: service.priceCurrency,
+      photos: service.photos.map((photo) => ({
+        id: photo.id,
+        sortOrder: photo.sortOrder,
+        file: this.storageService.serializeFile(photo.file),
+      })),
       availability: availability ?? undefined,
       createdAt: service.createdAt,
     };
@@ -2657,6 +2668,9 @@ export class SearchService {
     return {
       id: provider.id,
       name: provider.fullName,
+      avatar: provider.avatarFile
+        ? this.storageService.serializeFile(provider.avatarFile)
+        : null,
       distanceKm,
       ratingStats: provider.serviceOwnerRatingStat ?? {
         avgRating: 0,
