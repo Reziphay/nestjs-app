@@ -31,7 +31,7 @@ export class ReservationJobsService {
         reservationId,
       },
       {
-        jobId: `${RESERVATION_EXPIRATION_JOB}:${reservationId}`,
+        jobId: `${RESERVATION_EXPIRATION_JOB}.${reservationId}`,
         delay: Math.max(expiresAt.getTime() - Date.now(), 0),
         removeOnComplete: 1_000,
         removeOnFail: 1_000,
@@ -109,6 +109,6 @@ export class ReservationJobsService {
   }
 
   private getReminderJobId(reservationId: string, leadMinutes: number): string {
-    return `${RESERVATION_REMINDER_JOB}:${reservationId}:${leadMinutes}`;
+    return `${RESERVATION_REMINDER_JOB}.${reservationId}.${leadMinutes}`;
   }
 }

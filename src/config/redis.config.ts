@@ -20,5 +20,7 @@ export function buildRedisOptions(redisUrl: string): RedisOptions {
     db: Number.isNaN(dbFromPath) ? 0 : dbFromPath,
     tls: parsedUrl.protocol === 'rediss:' ? {} : undefined,
     maxRetriesPerRequest: null,
+    enableOfflineQueue: false,
+    connectTimeout: 10_000,
   };
 }

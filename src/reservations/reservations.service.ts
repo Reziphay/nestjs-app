@@ -1950,7 +1950,12 @@ export class ReservationsService {
       completedAt: reservation.completedAt,
       createdAt: reservation.createdAt,
       updatedAt: reservation.updatedAt,
-      service: reservation.service,
+      service: {
+        ...reservation.service,
+        priceAmount: reservation.service.priceAmount != null
+          ? Number(reservation.service.priceAmount)
+          : null,
+      },
       brand: reservation.brand,
       customer: reservation.customerUser,
       owner: reservation.serviceOwnerUser,
