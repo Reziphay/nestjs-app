@@ -253,10 +253,22 @@ export class ReservationsService {
       ],
     });
 
+    const now = Date.now();
     return {
-      items: reservations.map((reservation) =>
-        this.serializeReservation(reservation),
-      ),
+      items: reservations.map((reservation) => {
+        if (
+          reservation.status === ReservationStatus.PENDING &&
+          reservation.approvalExpiresAt != null &&
+          reservation.approvalExpiresAt.getTime() <= now
+        ) {
+          return this.serializeReservation({
+            ...reservation,
+            status: ReservationStatus.EXPIRED,
+            approvalExpiresAt: null,
+          });
+        }
+        return this.serializeReservation(reservation);
+      }),
     };
   }
 
@@ -287,10 +299,24 @@ export class ReservationsService {
       ],
     });
 
+    const now = Date.now();
     return {
-      items: reservations.map((reservation) =>
-        this.serializeReservation(reservation),
-      ),
+      items: reservations.map((reservation) => {
+        // Lazily coerce stale-PENDING reservations to EXPIRED in the response.
+        // The DB record will be updated by BullMQ or the next accept/reject call.
+        if (
+          reservation.status === ReservationStatus.PENDING &&
+          reservation.approvalExpiresAt != null &&
+          reservation.approvalExpiresAt.getTime() <= now
+        ) {
+          return this.serializeReservation({
+            ...reservation,
+            status: ReservationStatus.EXPIRED,
+            approvalExpiresAt: null,
+          });
+        }
+        return this.serializeReservation(reservation);
+      }),
     };
   }
 
